@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+frontend/.turbo/
+npm-debug.log*
+yarn-error.log*
+
+# Generated artifacts
+paper/
+*.pdf
+!tests/golden/*.pdf
+data/index/
+*.faiss
+logs/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
