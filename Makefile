@@ -1,4 +1,4 @@
-.PHONY: help install install-dev backend frontend-install frontend test lint typecheck demo clean
+.PHONY: help install install-dev backend frontend-install frontend test lint typecheck validate test-dialectic demo clean
 
 help:
 	@echo "legal research generator — make targets"
@@ -10,6 +10,9 @@ help:
 	@echo "  test            Run the pytest suite (mock backend, no GPU/network)"
 	@echo "  lint            Ruff lint"
 	@echo "  typecheck       mypy strict typecheck"
+	@echo "  validate        Lint, typecheck dialectic module, and run dialectic tests"
+	@echo "  typecheck-dialectic  mypy strict typecheck of modules/dialectic"
+	@echo "  test-dialectic  Run dialectic module tests only"
 	@echo "  demo            Run the end-to-end CLI demo (raw idea -> verified paper + PDF)"
 
 install:
@@ -31,10 +34,18 @@ test:
 	python -m pytest
 
 lint:
-	python -m ruff check src tests
+	python -m ruff check src tests modules/dialectic
 
 typecheck:
-	python -m mypy
+	python -m mypy src modules/dialectic
+
+validate: lint typecheck-dialectic test-dialectic
+
+typecheck-dialectic:
+	python -m mypy modules/dialectic
+
+test-dialectic:
+	python -m pytest tests/test_dialectic.py -v
 
 demo:
 	python -m legal_research.demo
