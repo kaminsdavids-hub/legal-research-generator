@@ -568,3 +568,59 @@ than weakens the case for reading §5/§9.8 as settled-null-and-superseded.
 **Channel safety.** The propositions quoted into the antithesis prompt have
 already passed the citation channel, so echoing them cannot introduce a citation
 the antithesis did not author. The antithesis's own output is scanned as before.
+
+#### Measured effect
+
+Same 4 questions, same models, before and after:
+
+| | before | after |
+|---|---|---|
+| proposition counts (T, A) | (1,2) (1,2) (1,1) (2,2) | (3,3) ×4 |
+| pairs compared | 9 | 36 |
+| **entailment** (the sides agreeing) | **4 (44%)** | **1 (3%)** |
+| neutral | 3 (33%) | 8 (22%) |
+| contradiction | 2 (22%) | 27 (75%) |
+| cruxes per question | 1, 1, 0, 0 | 4, 9, 6, 8 |
+| questions yielding ≥1 crux | 2 / 4 | 4 / 4 |
+
+**The diagnosed defect is fixed.** Entailment — the direct measure of "the two
+sides are arguing the same position" — collapsed from 44% to 3%, and every
+question now yields at least one crux instead of half of them yielding none.
+
+**The raw crux count overstates the gain, and should not be quoted as 2 → 27.**
+Two artifacts inflate it:
+
+* *Combinatorial multiplication.* Both sides now emit 3 propositions instead of
+  1-2, so the cross-product grew from 9 pairs to 36. More pairs alone produces
+  more cruxes.
+* *Within-side redundancy.* Each side's propositions are often near-paraphrases
+  of each other. Q4's thesis says "physical presence is not always required",
+  "remote sellers can have nexus through economic activity alone", and "the
+  physical presence rule has been abrogated" — three phrasings of one claim.
+  Crossed against a similarly redundant antithesis, that single disagreement
+  yields 8 cruxes. The honest count for Q4 is roughly *one* disagreement
+  reported eight times.
+
+So the module now reliably finds the disagreement it previously missed, but the
+crux table contains near-duplicate rows and the count is not a measure of how
+many distinct issues are in dispute.
+
+**Open follow-up: deduplicate the crux table.** Cruxes whose thesis and
+antithesis propositions are mutual near-paraphrases of an already-reported pair
+should be collapsed, or the table should group by disputed predicate and report
+a count. This is deliberately *not* done here: it changes what a crux means in
+the output and what the UI ranks, which is a design decision rather than a
+correctness fix. `Crux.outcome_bearing` already gives the UI a ranking signal in
+the meantime. Until it is done, read the crux count as "how many contradicting
+pairs", not "how many issues are in dispute" — and note that
+`test_empty_crux_table_states_the_reason` covers the empty case but nothing
+covers the over-full one.
+
+**A second-order effect worth watching.** The antithesis frequently negates the
+thesis mechanically rather than mounting an independent counter-argument — "The
+Supreme Court has recognized ..." becomes "The Supreme Court has not recognized
+...". That is a genuine contradiction and the NLI pass is right to flag it, but
+it is a weaker adversarial signal than a distinct opposing theory, and it is a
+direct consequence of `_REBUT_PROMPT` demanding the same predicate be addressed.
+Trading "the sides agree" for "the antithesis mirrors the thesis" is an
+improvement, not a solution.

@@ -339,13 +339,28 @@ comparison, not a significance test, and says so.
 ### D3a. The crux yield rate
 
 The §9.8 base rate (a crux on 3 of 8 and 2 of 8 questions) was **diagnosed and
-its main cause fixed** — the two debaters were arguing the same side. See rule 11
-for what is now enforced, and REMEDIATION §10.2 for the diagnosis.
+its main cause fixed** — the two debaters were arguing the same side. Measured
+before/after on 4 questions: entailment between the sides fell from 44% to 3%,
+and questions yielding at least one crux went from 2/4 to 4/4. See rule 11 for
+what is enforced and REMEDIATION §10.2 for the full numbers.
 
 What remains unenforced is the *rate itself*. Nothing asserts a minimum crux
 yield against live models, because that needs a live run and a question set with
-known-contested answers. The residual rate after the stance fix is recorded in
-REMEDIATION §10.2 as a measurement, not a guarantee.
+known-contested answers.
+
+### D3b. The crux table contains near-duplicates
+
+Each side emits 3 propositions that are often near-paraphrases of one another,
+and the extractor compares the full cross-product, so a single disagreement can
+be reported many times — 8 cruxes for one disputed predicate on one measured
+question. The crux count therefore means "how many contradicting pairs", not
+"how many issues are in dispute".
+
+Nothing deduplicates the table or enforces a bound on it.
+`test_empty_crux_table_states_the_reason` covers the empty case; there is no
+coverage of the over-full one. Collapsing near-duplicate cruxes would change
+what a crux means in the output, so it is left as a deliberate design decision
+rather than folded into a correctness pass. See REMEDIATION §10.2.
 
 ### D4. The corpus retrieval adapter
 
