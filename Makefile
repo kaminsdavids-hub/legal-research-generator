@@ -34,18 +34,24 @@ test:
 	python -m pytest
 
 lint:
-	python -m ruff check src tests modules/dialectic
+	python -m ruff check src tests modules/dialectic evals probe.py
 
 typecheck:
 	python -m mypy src modules/dialectic
 
-validate: lint typecheck-dialectic test-dialectic
+validate: lint typecheck-dialectic test-dialectic test-eval-harness
 
 typecheck-dialectic:
-	python -m mypy modules/dialectic
+	python -m mypy modules/dialectic evals
 
 test-dialectic:
 	python -m pytest tests/test_dialectic.py -v
+
+test-eval-harness:
+	python -m pytest tests/test_eval_harness.py -q
+
+eval:
+	python evals/run_eval.py
 
 demo:
 	python -m legal_research.demo

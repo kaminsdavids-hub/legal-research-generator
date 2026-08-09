@@ -1,0 +1,389 @@
+"""Eval harness for the dialectic module.
+
+Runs a question set through :class:`DialecticChat`, applies the hard gates,
+scores the surviving responses with an LLM judge, and aggregates per cluster.
+
+**How the citation gate is measured here.** The dialectic module is forbidden
+from emitting citations in prose — a proposition naming a case is discarded and
+regenerated (OBSERVABLES rule 1). Authority lives in the *slot*: retrieval
+proposes a candidate, CourtListener verification confirms it. So
+"every authority must come through the legal research tool call" is enforced
+against the resolved slots and a retrieval log, not against the text. A slot
+carrying a citation that never appeared in the retrieval log is a gate failure,
+which is exactly the fabrication the gate exists to catch.
+
+Transport-agnostic: this module never imports ``legal_research.*``. The runner
+script wires the clients and the corpus.
+"""
+
+from __future__ import annotations
+
+import json
+import statistics
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Protocol
+
+from modules.dialectic.copy import copy_crux_table, copy_exchange
+from modules.dialectic.models import DialecticTurn, SlotStatus
+
+# --------------------------------------------------------------------------- #
+# Eval set
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class EvalQuestion:
+    id: str
+    cluster: str
+    question: str
+    frame: str
+    must_engage: tuple[str, ...]
+    holdout: bool
+    central_crux: bool = False
+
+    def prompt(self) -> str:
+        """The text handed to the module: question plus its forum frame."""
+        if not self.frame:
+            return self.question
+        return f"{self.question}\n\nFrame: {self.frame}"
+
+
+@dataclass(frozen=True)
+class EvalSet:
+    name: str
+    clusters: dict[str, str]
+    questions: tuple[EvalQuestion, ...]
+
+    @classmethod
+    def load(cls, path: str | Path) -> EvalSet:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        declared = set(data.get("holdout_ids", []))
+        questions = tuple(
+            EvalQuestion(
+                id=q["id"],
+                cluster=q["cluster"],
+                question=q["question"],
+                frame=q.get("frame", ""),
+                must_engage=tuple(q["must_engage"]),
+                holdout=bool(q.get("holdout")),
+                central_crux=bool(q.get("central_crux")),
+            )
+            for q in data["questions"]
+        )
+        flagged = {q.id for q in questions if q.holdout}
+        if flagged != declared:
+            # The holdout list is the whole point of holding out; a silent
+            # mismatch would leak a holdout into an optimization loop.
+            raise ValueError(
+                f"holdout mismatch: flagged={sorted(flagged)} declared={sorted(declared)}"
+            )
+        return cls(name=data["name"], clusters=data["clusters"], questions=questions)
+
+    def select(self, *, include_holdout: bool = False) -> tuple[EvalQuestion, ...]:
+        """Questions to run. Holdouts are excluded unless explicitly requested."""
+        if include_holdout:
+            return self.questions
+        return tuple(q for q in self.questions if not q.holdout)
+
+
+# --------------------------------------------------------------------------- #
+# Retrieval log
+# --------------------------------------------------------------------------- #
+
+
+class LoggingRetriever:
+    """Wrap a ``CiteRetriever`` and record every candidate it proposed.
+
+    The gate needs to know what retrieval actually returned. Wrapping is enough
+    — the engine calls ``propose`` and nothing else — so this needs no change to
+    the module.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.log: list[dict[str, Any]] = []
+
+    def propose(self, court_hint: str, proposition: str) -> list[str]:
+        candidates = self._inner.propose(court_hint, proposition)
+        self.log.append(
+            {
+                "court_hint": court_hint,
+                "proposition": proposition,
+                "candidates": list(candidates),
+            }
+        )
+        return list(candidates)
+
+    @property
+    def retrieved_cites(self) -> set[str]:
+        return {c for entry in self.log for c in entry["candidates"]}
+
+    def reset(self) -> None:
+        self.log.clear()
+
+
+# --------------------------------------------------------------------------- #
+# Hard gates
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class GateResult:
+    id: str
+    passed: bool
+    detail: str
+
+
+def _slots(turn: DialecticTurn) -> list[Any]:
+    return [*turn.thesis.propositions, *turn.antithesis.propositions]
+
+
+def gate_citation_integrity(turn: DialecticTurn, retrieved: set[str]) -> GateResult:
+    """Every citation on a slot must have come through retrieval and verified.
+
+    Two distinct failures are reported separately because they mean different
+    things: a cite that never appeared in the retrieval log is fabricated, while
+    a cite that was retrieved but not verified is merely unconfirmed.
+    """
+    fabricated: list[str] = []
+    unverified: list[str] = []
+    for slot in _slots(turn):
+        cite = slot.normalized_cite
+        if not cite:
+            continue
+        if cite not in retrieved:
+            fabricated.append(cite)
+        elif slot.status != SlotStatus.VERIFIED:
+            unverified.append(f"{cite} ({slot.status.value})")
+
+    if fabricated:
+        return GateResult(
+            "citation_integrity",
+            False,
+            f"cite(s) not in the retrieval log: {fabricated}",
+        )
+    if unverified:
+        return GateResult(
+            "citation_integrity",
+            False,
+            f"retrieved but not verified: {unverified}",
+        )
+    return GateResult(
+        "citation_integrity",
+        True,
+        f"{sum(1 for s in _slots(turn) if s.normalized_cite)} cite(s), all retrieved and verified",
+    )
+
+
+def gate_temporal_validity(
+    turn: DialecticTurn, status_by_cite: dict[str, tuple[str, str]]
+) -> GateResult:
+    """A non-operative authority must not be presented as operative law.
+
+    ``status_by_cite`` maps a normalized cite to ``(status, note)`` from the
+    corpus. A slot resting on a rescinded or superseded authority must say so in
+    its note; otherwise the response is asserting current force it does not have.
+    """
+    offenders: list[str] = []
+    checked = 0
+    for slot in _slots(turn):
+        cite = slot.normalized_cite
+        if not cite or cite not in status_by_cite:
+            continue
+        status, _ = status_by_cite[cite]
+        checked += 1
+        if status == "in_force":
+            continue
+        haystack = f"{slot.note} {slot.proposition}".lower()
+        if status not in haystack and "no longer" not in haystack:
+            offenders.append(f"{cite} is {status} but the slot does not say so")
+
+    if offenders:
+        return GateResult("temporal_validity", False, "; ".join(offenders))
+    return GateResult(
+        "temporal_validity", True, f"{checked} status-bearing cite(s) presented correctly"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Judge
+# --------------------------------------------------------------------------- #
+
+CRITERIA = (
+    "steelmanning",
+    "authority_hierarchy",
+    "counterargument_anticipation",
+    "crux_identification",
+    "synthesis_discipline",
+)
+
+_JUDGE_PROMPT = (
+    "You are a strict evaluator of legal dialectic responses.\n"
+    "Score the response on each criterion from 1 to 10.\n"
+    "  steelmanning                 - both sides argued at the strength competent counsel would bring\n"
+    "  authority_hierarchy          - binding vs persuasive, correct forum, good-law status\n"
+    "  counterargument_anticipation - including procedural, standing, and ripeness attacks\n"
+    "  crux_identification          - isolates the genuinely dispositive question\n"
+    "  synthesis_discipline         - conclusion follows from the weighing; honest uncertainty where authority is split\n"
+    "Be harsh. A response that merely restates the question scores 1-2. Reserve 9-10 "
+    "for work a practising appellate lawyer would sign.\n"
+    "Respond ONLY with a JSON object:\n"
+    '{"scores": {"steelmanning": N, "authority_hierarchy": N, '
+    '"counterargument_anticipation": N, "crux_identification": N, '
+    '"synthesis_discipline": N}, "rationale": "..."}\n'
+    "Emit no prose outside the JSON object."
+)
+
+
+class JudgeClient(Protocol):
+    name: str
+
+    def chat(self, messages: list[Any], config: Any | None = None) -> str: ...
+
+
+@dataclass
+class JudgeVerdict:
+    scores: dict[str, int]
+    rationale: str
+    parsed: bool
+
+    @property
+    def mean(self) -> float:
+        return statistics.fmean(self.scores.values()) if self.scores else 0.0
+
+
+def judge_response(
+    client: JudgeClient, question: EvalQuestion, turn: DialecticTurn
+) -> JudgeVerdict:
+    """Score one response. A judge that will not parse yields zeros, not guesses."""
+    rendered = (
+        f"QUESTION: {question.prompt()}\n\n"
+        f"DOCTRINAL ANCHORS A COMPETENT ANSWER SHOULD ENGAGE:\n"
+        + "\n".join(f"  - {m}" for m in question.must_engage)
+        + f"\n\nRESPONSE:\n{copy_exchange(turn)}\n\n{copy_crux_table(turn)}"
+    )
+    try:
+        raw = client.chat(
+            [
+                {"role": "system", "content": _JUDGE_PROMPT},
+                {"role": "user", "content": rendered},
+            ],
+            config={"temperature": 0.0, "seed": 7},
+        )
+    except Exception as exc:  # noqa: BLE001 - a broken judge is a result, not a crash
+        return JudgeVerdict({}, f"judge call failed: {exc}", parsed=False)
+    return parse_verdict(raw)
+
+
+def parse_verdict(raw: str) -> JudgeVerdict:
+    """Strictly parse the judge's JSON. Anything unexpected is a parse failure."""
+    text = raw.strip()
+    if text.startswith("```"):
+        import re
+
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return JudgeVerdict({}, f"unparseable judge output: {raw[:160]!r}", parsed=False)
+    if not isinstance(data, dict) or not isinstance(data.get("scores"), dict):
+        return JudgeVerdict({}, f"missing scores object: {raw[:160]!r}", parsed=False)
+
+    scores: dict[str, int] = {}
+    for name in CRITERIA:
+        value = data["scores"].get(name)
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            return JudgeVerdict({}, f"criterion {name!r} missing or non-numeric", parsed=False)
+        if not 1 <= value <= 10:
+            return JudgeVerdict({}, f"criterion {name!r} out of range: {value}", parsed=False)
+        scores[name] = int(value)
+    return JudgeVerdict(scores, str(data.get("rationale", "")), parsed=True)
+
+
+# --------------------------------------------------------------------------- #
+# Results
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class QuestionResult:
+    id: str
+    cluster: str
+    holdout: bool
+    gates: list[GateResult]
+    verdict: JudgeVerdict
+
+    @property
+    def gates_passed(self) -> bool:
+        return all(g.passed for g in self.gates)
+
+    @property
+    def score(self) -> float:
+        """A failed hard gate scores 0, whatever the judge thought."""
+        return self.verdict.mean if self.gates_passed else 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "cluster": self.cluster,
+            "holdout": self.holdout,
+            "gates": {
+                "pass": self.gates_passed,
+                "detail": {g.id: {"pass": g.passed, "detail": g.detail} for g in self.gates},
+            },
+            "scores": [self.verdict.scores.get(c, 0) for c in CRITERIA],
+            "score_names": list(CRITERIA),
+            "mean": round(self.score, 3),
+            "judge_parsed": self.verdict.parsed,
+            "judge_rationale": self.verdict.rationale,
+        }
+
+
+@dataclass
+class RunReport:
+    eval_set: str
+    results: list[QuestionResult] = field(default_factory=list)
+
+    @property
+    def overall_mean(self) -> float:
+        return statistics.fmean([r.score for r in self.results]) if self.results else 0.0
+
+    def cluster_means(self) -> dict[str, float]:
+        by: dict[str, list[float]] = {}
+        for r in self.results:
+            by.setdefault(r.cluster, []).append(r.score)
+        return {k: round(statistics.fmean(v), 3) for k, v in sorted(by.items())}
+
+    def gate_failures(self) -> list[str]:
+        return [r.id for r in self.results if not r.gates_passed]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "eval_set": self.eval_set,
+            "overall_mean": round(self.overall_mean, 3),
+            "cluster_means": self.cluster_means(),
+            "gate_failures": self.gate_failures(),
+            "questions": [r.to_dict() for r in self.results],
+        }
+
+
+PLATEAU_DELTA = 0.2
+PLATEAU_ROUNDS = 3
+
+
+def has_plateaued(
+    means: Sequence[float], *, delta: float = PLATEAU_DELTA, rounds: int = PLATEAU_ROUNDS
+) -> bool:
+    """True when the overall mean moved < *delta* across *rounds* consecutive runs.
+
+    Needs ``rounds + 1`` observations to see ``rounds`` changes.
+    """
+    if len(means) < rounds + 1:
+        return False
+    recent = means[-(rounds + 1) :]
+    # Pairing a sequence with its own tail is deliberately offset by one, so
+    # strict= must stay False here.
+    pairs = zip(recent, recent[1:], strict=False)
+    return all(abs(b - a) < delta for a, b in pairs)
