@@ -216,9 +216,16 @@ def _resolves(match: dict[str, Any] | None) -> tuple[bool, str]:
     unverifiable, which reads as a fabricated citation rather than a quirk of
     the upstream database.
 
-    A 300 is accepted only when every returned cluster names the same case. When
-    the clusters name *different* cases the citation really is ambiguous, and
-    guessing which one was meant is exactly the error the gate exists to catch.
+    A 300 is accepted only when the clusters are the *same* opinion. When they
+    are genuinely different cases the citation really is ambiguous, and guessing
+    which one was meant is exactly the error the gate exists to catch.
+
+    Sameness is decided on the filing date first and the case name second. Name
+    matching alone is too brittle: CourtListener stores AOSI II twice as
+    "Agency for Int'l Dev. v. Alliance for Open Soc'y Int'l, Inc." and
+    "Agency for Int'l Development v. Alliance for Open Society" — one opinion in
+    two abbreviation styles. Two genuinely distinct cases sharing a citation and
+    a filing date is vanishingly unlikely by comparison.
     """
     if not match or not match.get("clusters"):
         return False, ""
@@ -228,13 +235,18 @@ def _resolves(match: dict[str, Any] | None) -> tuple[bool, str]:
     if status != 300:
         return False, ""
 
-    names = {
-        " ".join(str(c.get("case_name", "")).lower().split())
-        for c in match["clusters"]
-    }
+    clusters = match["clusters"]
+    note = f" ({len(clusters)} duplicate cluster(s) for one opinion)"
+
+    dates = {str(c.get("date_filed", "")).strip() for c in clusters}
+    dates.discard("")
+    if len(dates) == 1:
+        return True, note
+
+    names = {" ".join(str(c.get("case_name", "")).lower().split()) for c in clusters}
     names.discard("")
     if len(names) == 1:
-        return True, f" ({len(match['clusters'])} duplicate cluster(s) for one opinion)"
+        return True, note
     return False, ""
 
 

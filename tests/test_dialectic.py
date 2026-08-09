@@ -1725,12 +1725,21 @@ def test_annotation_is_skipped_when_the_retriever_cannot_supply_one() -> None:
     assert "NOT CURRENTLY OPERATIVE" not in turn.thesis.propositions[0].note
 
 
-def _lookup_payload(status: int, names: list[str], cite: str = "564 U.S. 552") -> list[dict]:
+def _lookup_payload(
+    status: int,
+    names: list[str],
+    cite: str = "564 U.S. 552",
+    dates: list[str] | None = None,
+) -> list[dict]:
+    dates = dates or ["2011-06-23"] * len(names)
     return [{
         "citation": cite,
         "normalized_citations": [cite],
         "status": status,
-        "clusters": [{"id": 100 + i, "case_name": n} for i, n in enumerate(names)],
+        "clusters": [
+            {"id": 100 + i, "case_name": n, "date_filed": d}
+            for i, (n, d) in enumerate(zip(names, dates, strict=True))
+        ],
     }]
 
 
@@ -1757,10 +1766,36 @@ def test_duplicate_clusters_for_one_opinion_still_verify() -> None:
 
 
 def test_genuinely_ambiguous_citation_does_not_verify() -> None:
-    """Different case names means the citation really is ambiguous."""
-    slot = _verify_one(_lookup_payload(300, ["Smith v. Jones", "Doe v. Roe"]))
+    """Different cases, different filing dates: the citation really is ambiguous."""
+    slot = _verify_one(
+        _lookup_payload(
+            300, ["Smith v. Jones", "Doe v. Roe"], dates=["1990-01-01", "2005-07-14"]
+        )
+    )
     assert slot.status == SlotStatus.NOT_FOUND
     assert "300" in slot.note
+
+
+def test_one_opinion_stored_under_two_name_styles_verifies() -> None:
+    """CourtListener stores AOSI II twice, abbreviated differently.
+
+    Matching on the name alone read that as two different cases and left a valid
+    Supreme Court authority unverifiable. The filing date settles it.
+    """
+    slot = _verify_one(
+        _lookup_payload(
+            300,
+            [
+                "Agency for Int'l Dev. v. Alliance for Open Soc'y Int'l, Inc.",
+                "Agency for Int'l Development v. Alliance for Open Society",
+            ],
+            cite="591 U.S. 430",
+            dates=["2020-06-29", "2020-06-29"],
+        ),
+        cite="591 U.S. 430",
+    )
+    assert slot.status == SlotStatus.VERIFIED
+    assert "duplicate cluster" in slot.note
 
 
 def test_single_match_still_verifies_unchanged() -> None:
