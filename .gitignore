@@ -47,3 +47,6 @@ logs/
 
 # Eval caches and results are local artefacts, not source.
 evals/.cache/
+
+# Scheduled-run logs are local artefacts.
+logs/
