@@ -34,6 +34,25 @@ class CiteRetriever(Protocol):
         ...
 
 
+@runtime_checkable
+class CiteAnnotator(Protocol):
+    """Optional capability: report that an authority is not currently operative.
+
+    Separate from :class:`CiteRetriever` because most retrievers have no notion
+    of good-law status, and a retriever that lacks it should still be usable.
+    The engine checks for this method and skips annotation when it is absent.
+
+    A rescinded rule that reaches the reader looking like operative law is a
+    serious error, so the annotation is attached to the slot — which also puts
+    it in front of the synthesis role, the only role that runs after retrieval
+    and can therefore reason about what was actually retrieved.
+    """
+
+    def annotate(self, cite: str) -> str:
+        """Return a status note for *cite*, or "" when it is in force."""
+        ...
+
+
 class StubCiteRetriever:
     """Deterministic offline retriever backed by an explicit mapping.
 

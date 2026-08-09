@@ -1,0 +1,82 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 3.8,
+  "cluster_means": {
+    "A": 3.8
+  },
+  "gate_failures": [
+    "A1"
+  ],
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": false,
+            "detail": "90 Fed. Reg. 4544 is rescinded but the slot does not say so"
+          }
+        }
+      },
+      "scores": [
+        9,
+        8,
+        9,
+        9,
+        9
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The thesis correctly identifies that the content of the output \u2013 shaped by the creator\u2019s choices \u2013 is what matters under the First Amendment, drawing parallels to artistic tools. The antithesis powerfully argues that the model weights themselves are simply tools, lacking the requisite human creativity and intent necessary for constitutional protection. The decisive crux lies in the fundamental question of authorship and intent. While the thesis emphasizes the creator\u2019s influence, the antithesis correctly points to the established legal precedent that requires demonstrable human creativity and intent for First Amendment protection to apply. The Ninth Circuit\u2019s established approach, as evidenced by the cited cases, leans toward recognizing authorial speech, but this is inextricably linked to the *choices* made by the human operator, not the underlying model."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "6 status-bearing cite(s) presented correctly"
+          }
+        }
+      },
+      "scores": [
+        7,
+        6,
+        8,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively engages the doctrinal anchors by addressing the key points raised in the question. It presents a clear thesis and antithesis, with each side providing relevant legal precedents to support their arguments. The synthesis section demonstrates an understanding of the core conflict and provides a nuanced analysis of the potential outcome based on the established precedent. However, the response could have been more concise and focused, as it occasionally veers into unnecessary detail or repetition."
+    }
+  ]
+}

@@ -119,7 +119,13 @@ _SYNTHESIS_PROMPT = (
     "Concisely reconcile the strongest points, name the decisive crux, and state "
     "the likely outcome.\n"
     "Do NOT cite specific cases, reporter strings, or 'X v. Y' names.\n"
-    "Use only plain prose."
+    "Use only plain prose.\n"
+    "CRITICAL: some authorities carry a status note saying they are rescinded, "
+    "superseded, or otherwise no longer operative. You are the only role that "
+    "sees those notes. If an argument rests on such an authority, you MUST say "
+    "in your own words that it is no longer operative law and that it carries "
+    "only precedential or persuasive weight. Presenting a rescinded rule as "
+    "current law is the single worst error you can make here."
 )
 
 
@@ -498,16 +504,35 @@ class DialecticChat:
                     )
                 )
                 continue
+            cite = candidates[0]
+            note = "candidate proposed by retrieval; awaiting verification"
+            # An authority that is no longer operative must be flagged here, or
+            # a rescinded rule reaches the reader looking like current law. This
+            # also puts the status in front of the synthesis role, which is the
+            # only role that runs after retrieval.
+            status_note = self._annotate(cite)
+            if status_note:
+                note = f"{note}; {status_note}"
             proposed.append(
                 slot.model_copy(
                     update={
-                        "normalized_cite": candidates[0],
+                        "normalized_cite": cite,
                         "status": SlotStatus.PROPOSED,
-                        "note": "candidate proposed by retrieval; awaiting verification",
+                        "note": note,
                     }
                 )
             )
         return position.model_copy(update={"propositions": proposed})
+
+    def _annotate(self, cite: str) -> str:
+        """Status note for *cite*, when the retriever can supply one."""
+        annotate = getattr(self.retriever, "annotate", None)
+        if not callable(annotate):
+            return ""
+        try:
+            return str(annotate(cite) or "")
+        except Exception:  # noqa: BLE001 - annotation must not void a turn
+            return ""
 
     _NO_RETRIEVAL_NOTE = (
         "unverified by construction: no retrieval stage configured, so no "

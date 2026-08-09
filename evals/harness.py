@@ -190,33 +190,68 @@ def gate_citation_integrity(
     )
 
 
+#: Phrases that count as acknowledging an authority is no longer operative.
+_NON_OPERATIVE_MARKERS = (
+    "rescinded",
+    "superseded",
+    "no longer operative",
+    "no longer in force",
+    "not currently operative",
+    "not operative",
+    "repealed",
+    "withdrawn",
+    "never took effect",
+    "no longer good law",
+)
+
+
 def gate_temporal_validity(
     turn: DialecticTurn, status_by_cite: dict[str, tuple[str, str]]
 ) -> GateResult:
     """A non-operative authority must not be presented as operative law.
 
     ``status_by_cite`` maps a normalized cite to ``(status, note)`` from the
-    corpus. A slot resting on a rescinded or superseded authority must say so in
-    its note; otherwise the response is asserting current force it does not have.
+    corpus.
+
+    **This reads model-authored prose only** — the propositions and the
+    synthesis — and deliberately ignores ``slot.note``. The retrieval stage
+    writes the status into that note, so a gate that read it would be checking
+    that our own machinery wrote a string, not that the response understood the
+    rule was repealed. It would pass every time and measure nothing.
+
+    In practice this tests the synthesis, because propositions are generated
+    before retrieval runs and cannot know which authority they were given. That
+    is the honest scope of the check: the synthesis is the only role that sees
+    the status and can act on it.
     """
     offenders: list[str] = []
     checked = 0
+    # Model-authored text only. `slot.note` is machinery-authored and excluded.
+    authored = " ".join(
+        [*(slot.proposition for slot in _slots(turn)), turn.synthesis]
+    ).lower()
+
     for slot in _slots(turn):
         cite = slot.normalized_cite
         if not cite or cite not in status_by_cite:
             continue
         status, _ = status_by_cite[cite]
-        checked += 1
         if status == "in_force":
             continue
-        haystack = f"{slot.note} {slot.proposition}".lower()
-        if status not in haystack and "no longer" not in haystack:
-            offenders.append(f"{cite} is {status} but the slot does not say so")
+        checked += 1
+        if not any(marker in authored for marker in _NON_OPERATIVE_MARKERS):
+            offenders.append(
+                f"{cite} is {status} but no model-authored text says so"
+            )
 
     if offenders:
-        return GateResult("temporal_validity", False, "; ".join(offenders))
+        return GateResult("temporal_validity", False, "; ".join(dict.fromkeys(offenders)))
     return GateResult(
-        "temporal_validity", True, f"{checked} status-bearing cite(s) presented correctly"
+        "temporal_validity",
+        True,
+        f"{checked} non-operative cite(s) acknowledged in model-authored text"
+        if checked
+        else "no non-operative authority cited",
     )
 
 

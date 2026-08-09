@@ -168,13 +168,49 @@ def test_temporal_gate_fails_a_rescinded_authority_presented_as_operative() -> N
     assert "rescinded" in result.detail
 
 
-def test_temporal_gate_passes_when_the_slot_flags_the_rescission() -> None:
+def test_temporal_gate_ignores_the_machinery_authored_note() -> None:
+    """The retrieval stage writes the status into `note`.
+
+    A gate that read it would be checking that our own code wrote a string, not
+    that the response understood the rule was repealed -- it would pass every
+    time and measure nothing.
+    """
     turn = _turn(
         CitationSlot(
-            proposition="The rule, now rescinded, shows the control design.",
+            proposition="The rule controls these weights.",
             normalized_cite="90 Fed. Reg. 4544",
             status=SlotStatus.VERIFIED,
-            note="rescinded May 2025; precedential only",
+            note="candidate proposed by retrieval; NOT CURRENTLY OPERATIVE (rescinded)",
+        )
+    )
+    assert not gate_temporal_validity(turn, _STATUS).passed, (
+        "the auto-written note must not satisfy the gate"
+    )
+
+
+def test_temporal_gate_passes_when_the_synthesis_acknowledges_the_rescission() -> None:
+    """The synthesis is the only role that runs after retrieval."""
+    turn = _turn(
+        CitationSlot(
+            proposition="The framework shows the control design.",
+            normalized_cite="90 Fed. Reg. 4544",
+            status=SlotStatus.VERIFIED,
+            note="candidate proposed by retrieval",
+        )
+    )
+    turn.synthesis = (
+        "That framework was rescinded in 2025 and is no longer operative law; it "
+        "carries only precedential weight on what the agency believed it could do."
+    )
+    assert gate_temporal_validity(turn, _STATUS).passed
+
+
+def test_temporal_gate_accepts_acknowledgement_in_a_proposition() -> None:
+    turn = _turn(
+        CitationSlot(
+            proposition="The now-repealed framework shows the intended design.",
+            normalized_cite="90 Fed. Reg. 4544",
+            status=SlotStatus.VERIFIED,
         )
     )
     assert gate_temporal_validity(turn, _STATUS).passed

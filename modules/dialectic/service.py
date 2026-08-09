@@ -86,6 +86,23 @@ class _CorpusCiteRetriever:
             return f"{code} {section}"
         return ""
 
+    def annotate(self, cite: str) -> str:
+        """Status note for a cite whose corpus record is not in force.
+
+        Returns "" for in-force authority, so the common case adds nothing to
+        the slot. See :class:`modules.dialectic.retrieval.CiteAnnotator`.
+        """
+        for record in getattr(self._corpus, "records", []):
+            if self._format(record) != cite:
+                continue
+            status = getattr(record, "status", None)
+            value = getattr(status, "value", str(status or ""))
+            if value and value != "in_force":
+                note = str(getattr(record, "status_note", "") or "").strip()
+                return f"NOT CURRENTLY OPERATIVE ({value}): {note}" if note else f"NOT CURRENTLY OPERATIVE ({value})"
+            return ""
+        return ""
+
     def propose(self, court_hint: str, proposition: str) -> list[str]:
         query = f"{court_hint} {proposition}".strip()
         if not query:
