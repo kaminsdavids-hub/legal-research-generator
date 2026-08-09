@@ -37,3 +37,10 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Local Netlify folder
+.netlify
+
+# Env backups: these hold real secrets and must never be committed.
+.env.backup-*
+.env.*.bak
