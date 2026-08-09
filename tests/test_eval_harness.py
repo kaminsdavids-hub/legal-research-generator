@@ -407,3 +407,63 @@ def test_logging_retriever_tolerates_a_retriever_without_annotate() -> None:
             return []
 
     assert LoggingRetriever(_Plain()).annotate("392 U.S. 1") == ""
+
+
+def _result(gid_pass: bool, judge_raw: str, cluster: str = "A", qid: str = "Q1"):
+    from evals.harness import GateResult
+    return QuestionResult(
+        id=qid, cluster=cluster, holdout=False,
+        gates=[GateResult("citation_integrity", gid_pass, "")],
+        verdict=parse_verdict(judge_raw),
+    )
+
+
+def test_a_broken_judge_is_missing_data_not_a_zero() -> None:
+    """Collapsing an unparseable judge to 0.0 reports it as a terrible response.
+
+    On the first full run that single conflation moved cluster D from 7.30 to
+    5.84 and turned the best-performing cluster into the worst.
+    """
+    broken = _result(True, "the judge rambled instead of scoring")
+    assert broken.score is None
+    assert broken.scored is False
+    assert broken.to_dict()["mean"] is None
+
+    # A failed gate is a real zero and must stay one.
+    gate_failed = _result(False, _judge_json(**dict.fromkeys(CRITERIA, 9)))
+    assert gate_failed.score == 0.0
+    assert gate_failed.scored is True
+
+
+def test_unscored_questions_are_excluded_from_the_means() -> None:
+    from evals.harness import GateResult
+
+    ok = GateResult("citation_integrity", True, "")
+    report = RunReport(eval_set="x")
+    report.results = [
+        QuestionResult("D1", "D", False, [ok], parse_verdict("garbage")),
+        QuestionResult("D2", "D", False, [ok], parse_verdict(_judge_json(**dict.fromkeys(CRITERIA, 7)))),
+        QuestionResult("D3", "D", False, [ok], parse_verdict(_judge_json(**dict.fromkeys(CRITERIA, 8)))),
+    ]
+    # 7 and 8 average to 7.5; a 0 for D1 would drag it to 5.0.
+    assert report.overall_mean == pytest.approx(7.5)
+    assert report.cluster_means() == {"D": 7.5}
+    assert report.unscored() == ["D1"]
+    payload = report.to_dict()
+    assert payload["scored_count"] == 2
+    assert payload["total_count"] == 3
+    assert payload["unscored_judge_failed"] == ["D1"]
+
+
+def test_gate_failure_still_counts_as_zero_in_the_mean() -> None:
+    from evals.harness import GateResult
+
+    report = RunReport(eval_set="x")
+    report.results = [
+        QuestionResult("A1", "A", False, [GateResult("g", False, "")],
+                       parse_verdict(_judge_json(**dict.fromkeys(CRITERIA, 10)))),
+        QuestionResult("A2", "A", False, [GateResult("g", True, "")],
+                       parse_verdict(_judge_json(**dict.fromkeys(CRITERIA, 8)))),
+    ]
+    assert report.overall_mean == pytest.approx(4.0)
+    assert report.unscored() == []

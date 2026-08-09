@@ -381,22 +381,41 @@ class QuestionResult:
         return all(g.passed for g in self.gates)
 
     @property
-    def score(self) -> float:
-        """A failed hard gate scores 0, whatever the judge thought."""
-        return self.verdict.mean if self.gates_passed else 0.0
+    def scored(self) -> bool:
+        """False when the judge produced nothing usable and the gates passed.
+
+        That combination is *missing data*, not a zero: nothing is known about
+        the response's quality. Only a gate failure is a real zero.
+        """
+        return self.gates_passed is False or self.verdict.parsed
+
+    @property
+    def score(self) -> float | None:
+        """0 for a failed hard gate, ``None`` when the judge failed to answer.
+
+        Collapsing a broken judge to 0.0 silently reports it as a terrible
+        response. On the first full run that single conflation moved cluster D
+        from 7.30 to 5.84 and turned the best-performing cluster into the worst.
+        """
+        if not self.gates_passed:
+            return 0.0
+        if not self.verdict.parsed:
+            return None
+        return self.verdict.mean
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "cluster": self.cluster,
             "holdout": self.holdout,
+            "scored": self.scored,
             "gates": {
                 "pass": self.gates_passed,
                 "detail": {g.id: {"pass": g.passed, "detail": g.detail} for g in self.gates},
             },
             "scores": [self.verdict.scores.get(c, 0) for c in CRITERIA],
             "score_names": list(CRITERIA),
-            "mean": round(self.score, 3),
+            "mean": None if self.score is None else round(self.score, 3),
             "judge_parsed": self.verdict.parsed,
             "judge_rationale": self.verdict.rationale,
         }
@@ -408,24 +427,38 @@ class RunReport:
     results: list[QuestionResult] = field(default_factory=list)
 
     @property
+    def _scored(self) -> list[QuestionResult]:
+        """Results carrying a usable score. Judge failures are excluded."""
+        return [r for r in self.results if r.score is not None]
+
+    @property
     def overall_mean(self) -> float:
-        return statistics.fmean([r.score for r in self.results]) if self.results else 0.0
+        vals = [r.score for r in self._scored if r.score is not None]
+        return statistics.fmean(vals) if vals else 0.0
 
     def cluster_means(self) -> dict[str, float]:
         by: dict[str, list[float]] = {}
-        for r in self.results:
-            by.setdefault(r.cluster, []).append(r.score)
+        for r in self._scored:
+            if r.score is not None:
+                by.setdefault(r.cluster, []).append(r.score)
         return {k: round(statistics.fmean(v), 3) for k, v in sorted(by.items())}
 
     def gate_failures(self) -> list[str]:
         return [r.id for r in self.results if not r.gates_passed]
 
+    def unscored(self) -> list[str]:
+        """Questions whose judge produced nothing usable: missing, not zero."""
+        return [r.id for r in self.results if r.score is None]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "eval_set": self.eval_set,
             "overall_mean": round(self.overall_mean, 3),
+            "scored_count": len(self._scored),
+            "total_count": len(self.results),
             "cluster_means": self.cluster_means(),
             "gate_failures": self.gate_failures(),
+            "unscored_judge_failed": self.unscored(),
             "questions": [r.to_dict() for r in self.results],
         }
 

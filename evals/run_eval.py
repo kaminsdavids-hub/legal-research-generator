@@ -184,8 +184,13 @@ def main() -> int:
             verdict=verdict,
         )
         report.results.append(result)
-        flag = "PASS" if result.gates_passed else "GATE FAIL"
-        print(f"     {flag}  mean={result.score:.2f}  cruxes={len(turn.cruxes)}", flush=True)
+        if not result.gates_passed:
+            flag, shown = "GATE FAIL", "0.00"
+        elif result.score is None:
+            flag, shown = "JUDGE FAILED", "unscored"
+        else:
+            flag, shown = "PASS", f"{result.score:.2f}"
+        print(f"     {flag}  mean={shown}  cruxes={len(turn.cruxes)}", flush=True)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -194,9 +199,11 @@ def main() -> int:
     out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
 
     print("\n" + "=" * 70)
-    print(f"overall mean : {report.overall_mean:.3f}")
+    print(f"overall mean : {report.overall_mean:.3f}  "
+          f"(over {len(report._scored)}/{len(report.results)} scored)")
     print(f"per cluster  : {report.cluster_means()}")
     print(f"gate failures: {report.gate_failures() or 'none'}")
+    print(f"judge failed : {report.unscored() or 'none'}  (excluded from the mean, not scored 0)")
     print(f"written      : {out_path}")
 
     history = sorted(out_dir.glob(f"{eval_set.name}-*.json"))
