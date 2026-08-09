@@ -624,3 +624,158 @@ it is a weaker adversarial signal than a distinct opposing theory, and it is a
 direct consequence of `_REBUT_PROMPT` demanding the same predicate be addressed.
 Trading "the sides agree" for "the antithesis mirrors the thesis" is an
 improvement, not a solution.
+
+### 10.3. The antithesis now builds an independent counter-theory
+
+§10.2 fixed "the two sides argue the same position" and recorded the side effect
+it introduced: the antithesis contradicted the thesis by inserting "not" into the
+thesis's own sentence.
+
+```
+thesis:     "The Supreme Court has recognized that modern cell phones ..."
+antithesis: "The Supreme Court has not recognized that modern cell phones ..."
+```
+
+That is a real contradiction and the NLI pass is right to flag it, but it is a
+degenerate one. A mirror concedes the thesis's framing, its predicate, and its
+choice of authority, and disputes only the sign. Nothing is learned from it that
+the thesis did not already assert, and it is precisely the *absence* of an
+adversarial second opinion that the module exists to supply.
+
+The cause was the prompt: `_REBUT_PROMPT` literally asked for "the negation of
+one of them, addressing the same predicate". It got what it asked for.
+
+**Prompt.** `_REBUT_PROMPT` now asks the antithesis to build its own theory of
+the case, forbids polarity-flip restatement explicitly, and requires each
+proposition to be grounded in a *different* doctrine, standard, test, or line of
+authority than the thesis relies on — attacking the framing (choice of rule, the
+analogy, the scope of an exception, the standard of review, a skipped threshold
+question) rather than the conclusion.
+
+**Guard.** Prompting was not enough on its own the last time — the same mistake
+that produced §9.5 and §10.2 — so independence is *enforced*, in the spirit of
+`channel.py`. New `modules/dialectic/independence.py`:
+
+* `IndependenceGuard.measure` reports a `Mirror` when two propositions differ in
+  polarity *and* carry essentially the same vocabulary. Both conditions are
+  required: shared vocabulary alone is expected (the sides are arguing about the
+  same thing) and a polarity difference alone is what real disagreement looks
+  like. It is the combination that identifies a restatement.
+* Words are stemmed before comparison so "applies"/"apply" do not read as
+  different vocabulary, and negation markers are dropped from the content set so
+  the inserted "not" does not itself lower the overlap.
+* Propositions under 5 content words are exempt: a terse claim ("No warrant is
+  required") legitimately shares nearly all its vocabulary with its opposite.
+
+**Thresholds are calibrated against observed data, not guessed.** Scoring the
+mirrors and the counter-theories from the live run:
+
+| | jaccard | containment |
+|---|---|---|
+| real mirrors (n=4) | 0.55 – 1.00 | 0.81 – 1.00 |
+| independent counter-theories (n=4) | 0.00 – 0.12 | 0.00 – 0.25 |
+
+The two populations separate with a wide gap, so `MIN_JACCARD = 0.45` and
+`MIN_CONTAINMENT = 0.65` sit in the middle of it rather than at the edge of
+either. Both populations are fixtures in `tests/test_dialectic.py`
+(`_REAL_MIRRORS`, `_INDEPENDENT_THEORIES`) so a threshold change that collapses
+the separation fails the suite.
+
+**Retry carries feedback.** A rejected draft is re-rolled with
+`_MIRROR_FEEDBACK`, which names the offending propositions. Re-rolling on
+temperature alone re-runs the same mistake — the lesson of §8c applied to a new
+failure mode.
+
+**It degrades visibly rather than failing closed.** Unlike the citation channel,
+independence is a quality property, not a safety one: a mirrored antithesis is
+worth more than no antithesis. When every attempt mirrors, the least-bad draft
+is kept and each mirroring proposition is flagged in its `note`
+("independence guard: this merely negates the opposing proposition ..."), which
+flows into the copy payloads and the API. The reader is told the antithesis
+conceded the framing rather than being shown a contradiction that is not one.
+
+The thesis is not subject to the guard — it is generated first and has nothing
+to mirror.
+
+Tests: `test_independence_guard_catches_polarity_flip_mirrors`,
+`test_independence_guard_allows_a_real_counter_theory`,
+`test_independence_guard_needs_both_shared_words_and_flipped_polarity`,
+`test_independence_guard_ignores_propositions_too_short_to_judge`,
+`test_independence_guard_scan_raises_and_names_every_mirror`,
+`test_independence_guard_is_inert_without_an_opposing_side`,
+`test_antithesis_that_mirrors_is_regenerated_with_feedback`,
+`test_persistent_mirroring_degrades_visibly_rather_than_failing_closed`,
+`test_thesis_is_not_subject_to_the_independence_guard`.
+
+**Refactor.** Stopwords, negation markers, tokenization and overlap metrics moved
+to `modules/dialectic/textnorm.py`, shared by the NLI pass and the guard. They
+must agree on what "same words" means: the guard exists to catch exactly the
+pattern the NLI pass reports as a contradiction, so two definitions could
+contradict each other. `NLIEvaluator` keeps its `_normalize` / `_has_negation` /
+`_content_words` methods as thin delegates, since `probe.py` calls them.
+
+#### Measured effect of the independence guard
+
+Same 4 questions and models across all three configurations:
+
+| | baseline (no stance) | stance only (§10.2) | stance + independence guard |
+|---|---|---|---|
+| **residual mirrors** | — | high (qualitative) | **0 / 12 (0%)** |
+| entailment (sides agreeing) | 44% | 3% | 6% |
+| contradiction | 22% | 75% | 31% |
+| neutral | 33% | 22% | 64% |
+| cruxes per question | 1, 1, 0, 0 | 4, 9, 6, 8 | 4, 3, 1, 3 |
+| questions yielding ≥1 crux | 2 / 4 | 4 / 4 | 4 / 4 |
+| regenerations spent | 0 | 0 | 0, 1, 2, 0 |
+
+**The guard works, and the model can satisfy it.** Zero of twelve antithesis
+propositions still mirror. The guard fired on two of four questions and
+`llama3.1:8b` produced an acceptable independent draft on the retry both times —
+it did not simply burn the budget, which was the live risk.
+
+**The propositions are genuine counter-theories, not metric evasion.** A guard
+that scores vocabulary overlap could in principle be satisfied by rewording a
+mirror. It was not. Q1's antithesis argues three distinct doctrinal grounds:
+
+1. *textualist* — "The Fourth Amendment's 'effects' clause does not encompass
+   digital information ... it was intended to protect tangible property only";
+2. *arguendo, different doctrine* — "**Even if** the 'effects' clause were
+   interpreted broadly, the warrantless search ... would be justified as an
+   exception to the warrant requirement under the 'necessity' doctrine";
+3. *institutional competence* — "any such protection is a matter of legislative
+   intent rather than constitutional law".
+
+The second concedes the thesis's premise and wins on other ground, which is real
+appellate argument and the structural opposite of a polarity flip. Q3 is
+similar: the antithesis reframes the exclusionary rule as deterrence rather than
+remedy, attacks probable cause as the threshold question, and invokes judicial
+integrity — none of which appears in the thesis.
+
+**The honest trade-off: contradiction fell from 75% to 31%, and neutral rose
+from 22% to 64%.** This is not a regression. The 75% was inflated by mirrors,
+which are contradictions by construction — flipping the sign of a sentence
+guarantees the NLI reports a contradiction. Genuine independent theories often
+address a *different predicate* than the thesis, and the NLI correctly rates
+those `neutral` rather than `contradiction`. So the crux count fell from 27 to
+11 while the number of *distinct* disagreements went up.
+
+Entailment stayed low (3% → 6%), so this did not reintroduce the §10.2 defect of
+the two sides agreeing.
+
+**A tension worth naming.** Independence and direct contradiction pull against
+each other. The more genuinely independent the antithesis's theory, the less
+likely it maps onto the same predicate as any thesis proposition, and the fewer
+pairs the NLI can call contradictions — Q3 dropped to a single crux for exactly
+this reason. The module currently resolves that tension in favour of argument
+quality over crux count, which is the right default for a tool whose output a
+lawyer reads. It does mean the crux count is not a quality metric and should not
+be optimised: a configuration that maximises cruxes is one that maximises
+mirrors.
+
+This also partly addresses the §10.2 near-duplicate problem without the
+deduplication step: eliminating mirrors removed most of the redundancy that made
+one disagreement report as eight cruxes. The follow-up remains open, since
+within-side redundancy in the *thesis* is untouched.
+
+**Cost.** 64.9 min for 4 questions versus 46.1 min without the guard, the
+difference being the retries on two questions.

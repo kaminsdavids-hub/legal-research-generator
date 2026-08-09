@@ -4,6 +4,7 @@ from .channel import CitationChannel, CitationDetected
 from .copy import copy_crux_table, copy_exchange, copy_position
 from .crux import CruxExtractor, PrecedenceRule
 from .engine import CorrelationGuardReport, DialecticChat, FamilyCollision
+from .independence import IndependenceGuard, Mirror, MirrorDetected
 from .models import (
     BudgetLedger,
     CitationSlot,
@@ -40,6 +41,9 @@ __all__ = [
     "DialecticTurn",
     "DialecticChat",
     "FamilyCollision",
+    "IndependenceGuard",
+    "Mirror",
+    "MirrorDetected",
     "NLIEvaluator",
     "NullCiteRetriever",
     "Position",

@@ -13,6 +13,7 @@ from modules.dialectic.channel import CitationChannel, CitationDetected
 from modules.dialectic.copy import copy_crux_table, copy_exchange, copy_position
 from modules.dialectic.crux import CruxExtractor, PrecedenceRule
 from modules.dialectic.engine import DialecticChat, FamilyCollision
+from modules.dialectic.independence import IndependenceGuard, MirrorDetected
 from modules.dialectic.models import (
     CitationSlot,
     Crux,
@@ -1112,7 +1113,11 @@ def test_antithesis_is_shown_the_thesis_to_contradict() -> None:
     user = captured[0]
     assert "Does the rule apply?" in user
     assert "The rule applies to public officials." in user
-    assert "Contradict these" in user
+    # It is shown the thesis in order to build an independent counter-theory,
+    # not to negate it: asking for the negation produced mirrors.
+    assert "Build your OWN theory" in user
+    assert "NOT restatements" in user
+    assert "DIFFERENT doctrine" in user
 
 
 def test_failed_thesis_is_not_fed_back_as_an_argument() -> None:
@@ -1142,7 +1147,223 @@ def test_failed_thesis_is_not_fed_back_as_an_argument() -> None:
     )
     user = captured[0]
     assert "generation failed" not in user
-    assert "Contradict these" not in user
+    assert "Build your OWN theory" not in user
+
+
+# --------------------------------------------------------------------------- #
+# Independence guard — the antithesis must argue, not mirror
+# --------------------------------------------------------------------------- #
+
+# Mirrors observed live after the stance fix: the antithesis took a thesis
+# sentence and inserted "not".
+_REAL_MIRRORS = [
+    (
+        "The Supreme Court has not recognized that modern cell phones are "
+        "effectively miniature digital safes that require heightened privacy protection.",
+        "The Supreme Court has recognized that modern cell phones are effectively "
+        "miniature digital safes that retain highly personal information, and thus "
+        "require heightened privacy protection.",
+    ),
+    (
+        "A cell phone does not fall within the scope of the Fourth Amendment's "
+        "protections as it contains private information analogous to papers.",
+        "The Fourth Amendment protects people from unreasonable searches and seizures "
+        "of their persons, houses, papers, and effects. A cell phone falls within this "
+        "scope as it contains private information analogous to papers.",
+    ),
+    (
+        "Allowing warrantless searches of cell phones incident to arrest would not "
+        "create a significant risk of abuse by law enforcement.",
+        "Allowing warrantless searches of cell phones incident to arrest would create "
+        "a significant risk of abuse by law enforcement.",
+    ),
+    (
+        "The Supreme Court has not abrogated the physical presence rule, and states "
+        "may not require remote sellers to collect sales tax without a clear physical "
+        "connection.",
+        "The physical presence rule has been abrogated by subsequent Supreme Court "
+        "precedent allowing states to require remote sellers to collect sales tax.",
+    ),
+]
+
+# Genuine counter-theories: incompatible with the thesis, but reasoning from a
+# different doctrine rather than flipping its sign.
+_INDEPENDENT_THEORIES = [
+    (
+        "The search-incident-to-arrest exception rests on officer safety and evidence "
+        "preservation, neither of which is served by examining stored data after the "
+        "device is secured.",
+        "The Supreme Court has recognized that modern cell phones are effectively "
+        "miniature digital safes that retain highly personal information, and thus "
+        "require heightened privacy protection.",
+    ),
+    (
+        "Retailers lacking in-state operations cannot reasonably ascertain thousands of "
+        "local tax jurisdictions, so the compliance burden itself violates the Commerce "
+        "Clause.",
+        "The physical presence rule has been abrogated by subsequent Supreme Court "
+        "precedent allowing states to require remote sellers to collect sales tax.",
+    ),
+    (
+        "Congress has occupied this field through express preemption, so the state rule "
+        "is void regardless of any nexus analysis.",
+        "Many courts have found that remote sellers can have sufficient nexus with a "
+        "state through economic activity alone, without physical presence.",
+    ),
+]
+
+
+@pytest.mark.parametrize(("candidate", "opposing"), _REAL_MIRRORS)
+def test_independence_guard_catches_polarity_flip_mirrors(
+    candidate: str, opposing: str
+) -> None:
+    assert IndependenceGuard().measure(candidate, opposing) is not None
+
+
+@pytest.mark.parametrize(("candidate", "opposing"), _INDEPENDENT_THEORIES)
+def test_independence_guard_allows_a_real_counter_theory(
+    candidate: str, opposing: str
+) -> None:
+    assert IndependenceGuard().measure(candidate, opposing) is None
+
+
+def test_independence_guard_scan_raises_and_names_every_mirror() -> None:
+    guard = IndependenceGuard()
+    opposing = [m[1] for m in _REAL_MIRRORS[:2]]
+    candidates = [m[0] for m in _REAL_MIRRORS[:2]] + [
+        "Congress has occupied this field through express preemption."
+    ]
+    with pytest.raises(MirrorDetected) as exc:
+        guard.scan(candidates, opposing)
+    assert len(exc.value.mirrors) == 2, "the independent proposition was flagged too"
+    assert "merely negate" in str(exc.value)
+
+
+def test_independence_guard_is_inert_without_an_opposing_side() -> None:
+    IndependenceGuard().scan(["Anything at all, negated or not."], [])
+
+
+def test_independence_guard_needs_both_shared_words_and_flipped_polarity() -> None:
+    guard = IndependenceGuard()
+    thesis = (
+        "The Supreme Court has recognized that modern cell phones require heightened "
+        "privacy protection under the Fourth Amendment."
+    )
+    # Same vocabulary, same polarity: an agreeing restatement, not a mirror.
+    agreeing = (
+        "The Supreme Court has recognized that modern cell phones require heightened "
+        "privacy protection under the Fourth Amendment doctrine."
+    )
+    assert guard.measure(agreeing, thesis) is None
+    # Flipped polarity, different vocabulary: a real disagreement.
+    different = "Officer safety does not extend to data already secured in an evidence locker."
+    assert guard.measure(different, thesis) is None
+
+
+def test_independence_guard_ignores_propositions_too_short_to_judge() -> None:
+    """A terse claim shares nearly all its vocabulary with its own negation."""
+    guard = IndependenceGuard()
+    assert guard.measure("No warrant is required.", "A warrant is required.") is None
+
+
+def test_antithesis_that_mirrors_is_regenerated_with_feedback() -> None:
+    """Prompting alone did not stop mirroring, so the guard enforces it."""
+    prompts: list[str] = []
+
+    class _MirrorThenArgue:
+        name = "llama3.1"
+
+        def chat(self, messages: list[Any], config: Any | None = None) -> str:
+            prompts.append(messages[1]["content"])
+            if len(prompts) == 1:
+                return _slot_json(
+                    "The Supreme Court has not recognized that modern cell phones "
+                    "require heightened privacy protection under the Fourth Amendment.",
+                    "hint",
+                    Weight.CONTROLLING,
+                )
+            return _slot_json(
+                "The search-incident-to-arrest exception rests on officer safety and "
+                "evidence preservation, neither of which is served by examining stored "
+                "data after the device is secured.",
+                "hint",
+                Weight.CONTROLLING,
+            )
+
+    chat = DialecticChat(
+        thesis_client=_FakeLLM(
+            "hermes3",
+            _slot_json(
+                "The Supreme Court has recognized that modern cell phones require "
+                "heightened privacy protection under the Fourth Amendment.",
+                "hint",
+                Weight.CONTROLLING,
+            ),
+        ),
+        antithesis_client=_MirrorThenArgue(),
+        synthesis_client=_FakeLLM("gemma3", "Synthesis."),
+    )
+    turn = chat.chat("Was the phone search lawful?")
+
+    assert len(prompts) == 2, "the mirrored draft was not rejected"
+    # The re-roll names the offending proposition rather than just re-rolling.
+    assert "REJECTED" in prompts[1]
+    assert "merely negated" in prompts[1]
+    assert "The Supreme Court has not recognized" in prompts[1]
+    # The accepted answer is the independent one.
+    assert "officer safety" in turn.antithesis.propositions[0].proposition
+    assert turn.regenerated >= 1
+
+
+def test_persistent_mirroring_degrades_visibly_rather_than_failing_closed() -> None:
+    """Independence is a quality property, not a safety one.
+
+    A mirrored antithesis is worth more than no antithesis, so the least-bad
+    draft is kept — with the concession flagged on the slot, because a reader
+    must know the antithesis conceded the thesis's framing.
+    """
+    thesis_text = (
+        "The Supreme Court has recognized that modern cell phones require heightened "
+        "privacy protection under the Fourth Amendment."
+    )
+    mirror_text = (
+        "The Supreme Court has not recognized that modern cell phones require "
+        "heightened privacy protection under the Fourth Amendment."
+    )
+    chat = DialecticChat(
+        thesis_client=_FakeLLM("hermes3", _slot_json(thesis_text, "hint", Weight.CONTROLLING)),
+        antithesis_client=_FakeLLM("llama3.1", _slot_json(mirror_text, "hint", Weight.CONTROLLING)),
+        synthesis_client=_FakeLLM("gemma3", "Synthesis."),
+    )
+    turn = chat.chat("Was the phone search lawful?")
+
+    slot = turn.antithesis.propositions[0]
+    # Kept, not discarded.
+    assert slot.proposition == mirror_text
+    assert "independence guard" in slot.note
+    assert "merely negates" in slot.note
+    # And the flag survives into the copy payloads.
+    assert "independence guard" in copy_exchange(turn)
+
+
+def test_thesis_is_not_subject_to_the_independence_guard() -> None:
+    """The thesis has nothing to mirror; it is generated first."""
+    thesis_text = "The rule applies to public officials under settled doctrine."
+    chat = DialecticChat(
+        thesis_client=_FakeLLM("hermes3", _slot_json(thesis_text, "hint", Weight.CONTROLLING)),
+        antithesis_client=_FakeLLM(
+            "llama3.1",
+            _slot_json(
+                "Sovereign immunity bars the claim before any merits question arises.",
+                "hint",
+                Weight.CONTROLLING,
+            ),
+        ),
+        synthesis_client=_FakeLLM("gemma3", "Synthesis."),
+    )
+    turn = chat.chat("Does the rule apply?")
+    assert turn.thesis.propositions[0].proposition == thesis_text
+    assert "independence guard" not in turn.thesis.propositions[0].note
 
 
 def test_synthesis_receives_the_crux_table_and_no_duplicated_thesis() -> None:

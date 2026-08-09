@@ -17,6 +17,8 @@ import json
 import re
 from typing import Any, Literal
 
+from . import textnorm
+
 Label = Literal["entailment", "contradiction", "neutral"]
 Source = Literal["model", "heuristic"]
 
@@ -119,23 +121,13 @@ class NLIEvaluator:
     # --------------------------------------------------------------------- #
     # Heuristic path
     # --------------------------------------------------------------------- #
-    # Tokens that carry no topical content. Negation words are excluded from
-    # content separately, so a bare "not" never counts as shared subject matter.
-    _STOP = {
-        "the", "a", "an", "of", "to", "in", "and", "or", "for", "on", "that", "this",
-        "is", "are", "be", "as", "by", "with", "any", "such", "under", "section",
-        "it", "its", "from", "at", "into", "over", "after", "before", "when", "where",
-        "was", "were", "been", "has", "have", "had", "does", "did", "do", "will",
-        "there", "here", "but", "than", "then", "so", "if", "not",
-    }
-
-    # Negation markers. Applied to raw (lower-cased) text, never to normalized
-    # text: `_normalize` strips apostrophes, which made every contraction
-    # alternative unreachable and made "doesn't" read as non-negated.
-    _NEGATION_RE = re.compile(
-        r"\b(?:not|no|never|cannot|nor|neither|without|lacks?|fails?|failed|"
-        r"absent|denies|denied)\b|\b\w+n't\b"
-    )
+    # Stopwords, negation markers and tokenization live in `textnorm` so the
+    # independence guard shares one definition with this pass. The guard exists
+    # to catch the polarity-flip pattern this pass reports as a contradiction;
+    # if the two disagreed about what "same words" means, one would contradict
+    # the other.
+    _STOP = textnorm.STOP
+    _NEGATION_RE = textnorm.NEGATION_RE
 
     #: How many tokens after a negation marker fall within its scope.
     _NEGATION_SCOPE = 5
@@ -146,28 +138,21 @@ class NLIEvaluator:
 
     @staticmethod
     def _normalize(text: str) -> str:
-        return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+        return textnorm.normalize(text)
 
     @staticmethod
     def _raw_tokens(text: str) -> list[str]:
-        """Lower-case tokens with apostrophes preserved, so contractions survive."""
-        return re.findall(r"[a-z0-9']+", text.lower())
+        return textnorm.raw_tokens(text)
 
     def _has_negation(self, text: str) -> bool:
         """True when *text* contains a negation marker. Pass RAW text, not normalized."""
-        return bool(self._NEGATION_RE.search(text.lower()))
+        return textnorm.has_negation(text)
 
     def _content_words(self, text: str) -> set[str]:
-        return {
-            w
-            for w in self._normalize(text).split()
-            if len(w) > 2 and w not in self._STOP
-        }
+        return textnorm.content_words(text)
 
     def _overlap_ratio(self, p_words: set[str], h_words: set[str]) -> float:
-        if not p_words or not h_words:
-            return 0.0
-        return len(p_words & h_words) / min(len(p_words), len(h_words))
+        return textnorm.overlap_ratio(p_words, h_words)
 
     def _negation_scope_terms(self, text: str) -> set[str]:
         """Content words falling within the scope of a negation marker.

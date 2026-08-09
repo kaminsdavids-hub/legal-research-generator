@@ -71,7 +71,10 @@ def main() -> int:
         nli_client=make(args.nli),
     )
 
-    totals = {"pairs": 0, "contradiction": 0, "entailment": 0, "neutral": 0}
+    totals = {
+        "pairs": 0, "contradiction": 0, "entailment": 0, "neutral": 0,
+        "antithesis_props": 0, "mirrors": 0,
+    }
     prop_counts: list[tuple[int, int]] = []
     started = time.time()
 
@@ -99,7 +102,25 @@ def main() -> int:
                 mark = "  <-- CRUX" if label == "contradiction" else ""
                 print(f"    {label:<13} ({source:<9}) T:{t.proposition[:44]!r} A:{a.proposition[:44]!r}{mark}", flush=True)
 
-        print(f"\n  => cruxes: {len(turn.cruxes)}  | crux_note: {turn.crux_note[:90]}", flush=True)
+        # How many antithesis propositions still merely negate the thesis after
+        # the independence guard has spent its retry budget.
+        mirrors = chat.independence.find_mirrors(
+            [s.proposition for s in turn.antithesis.propositions],
+            [s.proposition for s in turn.thesis.propositions],
+        )
+        totals["antithesis_props"] += len(turn.antithesis.propositions)
+        totals["mirrors"] += len(mirrors)
+        if mirrors:
+            print("\n  RESIDUAL MIRRORS:", flush=True)
+            for m in mirrors:
+                print(f"    j={m.jaccard:.2f} c={m.containment:.2f} {m.candidate[:70]}", flush=True)
+
+        print(
+            f"\n  => cruxes: {len(turn.cruxes)}  | mirrors: {len(mirrors)}"
+            f"/{len(turn.antithesis.propositions)}  | regenerated: {turn.regenerated}"
+            f"  | crux_note: {turn.crux_note[:60]}",
+            flush=True,
+        )
 
     print("=" * 78, flush=True)
     print(f"proposition counts (thesis, antithesis): {prop_counts}", flush=True)
@@ -107,6 +128,10 @@ def main() -> int:
     for label in ("contradiction", "entailment", "neutral"):
         pct = 100.0 * totals[label] / totals["pairs"] if totals["pairs"] else 0.0
         print(f"  {label:<13} {totals[label]:>3}  ({pct:.0f}%)", flush=True)
+    mirrored = totals["mirrors"]
+    props = totals["antithesis_props"]
+    pct = 100.0 * mirrored / props if props else 0.0
+    print(f"residual mirrors: {mirrored}/{props} antithesis propositions ({pct:.0f}%)", flush=True)
     print(f"elapsed: {(time.time() - started) / 60:.1f} min", flush=True)
     return 0
 

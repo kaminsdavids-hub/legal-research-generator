@@ -10,6 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 from .channel import CitationChannel, CitationDetected
 from .copy import copy_crux_table
 from .crux import CruxExtractor
+from .independence import IndependenceGuard, Mirror, MirrorDetected
 from .models import (
     BudgetLedger,
     CitationSlot,
@@ -81,11 +82,35 @@ _POSITION_PROMPT = (
     "legal citation. A response containing one is discarded entirely."
 )
 
+# Demanding "the negation of each thesis proposition" produced contradictions,
+# but degenerate ones: the antithesis inserted "not" into the thesis's own
+# sentence. A mirror concedes the thesis's framing, predicate and choice of
+# authority and disputes only the sign, so nothing is learned from it. This asks
+# instead for an independent theory that happens to be incompatible — and
+# `IndependenceGuard` enforces it, because a prompt alone did not.
 _REBUT_PROMPT = (
-    "\n\nThe thesis has asserted the following propositions. Contradict these "
-    "DIRECTLY: each of your propositions should be the negation of one of them, "
-    "addressing the same predicate, not a variation on a different point.\n"
-    "{propositions}"
+    "\n\nThe thesis has argued the following:\n"
+    "{propositions}\n\n"
+    "Build your OWN theory of the case that leads to the opposite conclusion. "
+    "Your propositions must be incompatible with the thesis, but they must be "
+    "independent arguments, NOT restatements.\n"
+    "FORBIDDEN: producing a proposition by taking one of the thesis's sentences "
+    "and inserting \"not\", \"no\", or \"cannot\". A proposition that reuses the "
+    "thesis's wording with the polarity flipped is discarded and you will be "
+    "asked again.\n"
+    "REQUIRED: ground each of your propositions in a DIFFERENT doctrine, "
+    "standard, test, or line of authority than the one the thesis relies on, and "
+    "make that ground explicit in the proposition. Attack the thesis's framing "
+    "-- its choice of rule, its analogy, the scope of its exception, the "
+    "standard of review, a threshold question it skipped -- rather than its "
+    "conclusion."
+)
+
+_MIRROR_FEEDBACK = (
+    "\n\nYour previous answer was REJECTED. These propositions merely negated "
+    "the thesis instead of arguing independently:\n{mirrors}\n"
+    "Do not restate the thesis with the polarity flipped. Argue from a different "
+    "doctrine or a different framing of the question."
 )
 
 _SYNTHESIS_PROMPT = (
@@ -162,6 +187,7 @@ class DialecticChat:
         courtlistener: CourtListenerClient | None = None,
         retriever: CiteRetriever | None = None,
         channel: CitationChannel | None = None,
+        independence: IndependenceGuard | None = None,
         max_regenerations: int = 3,
     ) -> None:
         self.thesis_client = thesis_client
@@ -171,6 +197,9 @@ class DialecticChat:
         self.courtlistener = courtlistener
         self.retriever = retriever
         self.channel = channel or CitationChannel()
+        # Rejects an antithesis that restates the thesis with the polarity
+        # flipped. Prompting alone did not stop it (REMEDIATION 10.3).
+        self.independence = independence or IndependenceGuard()
         # The NLI client is a fourth model, and it must actually reach the
         # evaluator. Constructing it and leaving `CruxExtractor()` to build a
         # client-less `NLIEvaluator` meant every relation came from the
@@ -218,6 +247,22 @@ class DialecticChat:
             raise FamilyCollision("; ".join(collisions))
 
     @staticmethod
+    def _opposing_claims(opposing: Position | None) -> list[str]:
+        """Usable propositions from the opposing side, if it produced any.
+
+        A position that failed generation carries only the failure placeholder,
+        which is neither an argument to rebut nor something to measure
+        independence against.
+        """
+        if opposing is None:
+            return []
+        return [
+            slot.proposition
+            for slot in opposing.propositions
+            if slot.status != SlotStatus.NOT_FOUND and slot.proposition
+        ]
+
+    @staticmethod
     def _rebuttal_block(opposing: Position | None) -> str:
         """Render the opposing side's propositions for a direct rebuttal.
 
@@ -225,13 +270,7 @@ class DialecticChat:
         position failed generation, whose placeholder proposition must never be
         fed back into another model as if it were an argument.
         """
-        if opposing is None:
-            return ""
-        claims = [
-            slot.proposition
-            for slot in opposing.propositions
-            if slot.status != SlotStatus.NOT_FOUND and slot.proposition
-        ]
+        claims = DialecticChat._opposing_claims(opposing)
         if not claims:
             return ""
         numbered = "\n".join(f"{i}. {c}" for i, c in enumerate(claims, start=1))
@@ -244,12 +283,13 @@ class DialecticChat:
         client: ChatClient,
         opposing: Position | None = None,
     ) -> tuple[Position, int]:
-        """Generate one side, retrying on parse failure or citation leak.
+        """Generate one side, retrying on parse failure, citation leak, or mirroring.
 
         When *opposing* is supplied, its propositions are shown to this side to
-        be contradicted directly. Generating both sides blind from the same
-        question let them argue the same position, which yields no cruxes by
-        construction (REMEDIATION 10).
+        be argued against. Generating both sides blind from the same question let
+        them argue the same position, which yields no cruxes by construction
+        (REMEDIATION 10.2); demanding direct negation then produced mirrors,
+        which the independence guard rejects (REMEDIATION 10.3).
 
         Returns the position and the number of *retries* spent (0 when the first
         attempt was accepted). The caller records that on the turn so a reader
@@ -257,21 +297,28 @@ class DialecticChat:
         """
         # The opposing propositions have already passed the citation channel, so
         # quoting them back cannot introduce a citation this side did not author.
-        user_content = f"{question}{self._rebuttal_block(opposing)}"
-        messages = [
-            {"role": "system", "content": _system(side)},
-            {"role": "user", "content": user_content},
-        ]
+        base_content = f"{question}{self._rebuttal_block(opposing)}"
+        opposing_claims = self._opposing_claims(opposing)
+        # Feedback accumulated from a rejected attempt, fed back on the re-roll.
+        # Re-rolling on temperature alone re-runs the same mistake; naming the
+        # offending propositions is what changes the next draft.
+        feedback = ""
+
         # Initialised before the loop: the old `dir()` guard left this unbound on
         # the CitationDetected path, so a position rejected three times for
         # citations returned note="" and read as a parse failure.
         last_error = ""
+        last_mirrored: tuple[list[CitationSlot], str, list[Mirror]] | None = None
+
         for attempt in range(self.max_regenerations):
             # A rejected turn must be re-rolled, not re-run. At temperature 0 with
             # a fixed seed every retry reproduces the offending output verbatim,
             # so the regeneration budget is spent without ever changing anything.
             raw = client.chat(
-                messages,
+                [
+                    {"role": "system", "content": _system(side)},
+                    {"role": "user", "content": f"{base_content}{feedback}"},
+                ],
                 config={"temperature": 0.0 if attempt == 0 else 0.7, "seed": 7 + attempt},
             )
             try:
@@ -289,6 +336,25 @@ class DialecticChat:
                 last_error = f"attempt {attempt}: parse failed: {exc}"
                 continue
 
+            try:
+                self.independence.scan(
+                    [slot.proposition for slot in slots], opposing_claims
+                )
+            except MirrorDetected as exc:
+                last_error = (
+                    f"attempt {attempt}: {len(exc.mirrors)} proposition(s) merely "
+                    f"negated the opposing side"
+                )
+                # Keep the best-so-far draft. Independence is a quality property,
+                # not a safety one: a mirrored antithesis is worth more than no
+                # antithesis, so this degrades visibly instead of failing closed.
+                if last_mirrored is None or len(exc.mirrors) < len(last_mirrored[2]):
+                    last_mirrored = (slots, raw, exc.mirrors)
+                feedback = _MIRROR_FEEDBACK.format(
+                    mirrors="\n".join(f"- {m.candidate}" for m in exc.mirrors)
+                )
+                continue
+
             return (
                 Position(
                     side=side,  # type: ignore[arg-type]
@@ -298,6 +364,38 @@ class DialecticChat:
                     raw=raw,
                 ),
                 attempt,
+            )
+
+        if last_mirrored is not None:
+            # Every attempt mirrored. Return the least-bad draft with each
+            # mirroring proposition flagged, rather than discarding the position:
+            # the reader needs to know the antithesis conceded the framing.
+            slots, raw, mirrors = last_mirrored
+            mirrored_text = {m.candidate for m in mirrors}
+            flagged = [
+                slot.model_copy(
+                    update={
+                        "note": (
+                            f"{slot.note}; " if slot.note else ""
+                        )
+                        + "independence guard: this merely negates the opposing "
+                        "proposition rather than arguing independently "
+                        f"(unchanged after {self.max_regenerations} attempts)"
+                    }
+                )
+                if slot.proposition in mirrored_text
+                else slot
+                for slot in slots
+            ]
+            return (
+                Position(
+                    side=side,  # type: ignore[arg-type]
+                    model=client.name,
+                    family=detect_family(client.name),
+                    propositions=flagged,
+                    raw=raw,
+                ),
+                self.max_regenerations,
             )
 
         # All regeneration attempts failed: return an empty, flagged position.
@@ -529,6 +627,7 @@ class DialecticChat:
         arm.courtlistener = self.courtlistener
         arm.retriever = self.retriever
         arm.channel = self.channel
+        arm.independence = self.independence
         arm.crux_extractor = self.crux_extractor
         arm.max_regenerations = self.max_regenerations
         return arm

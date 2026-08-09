@@ -283,6 +283,40 @@ antithesis did not author.
 > debaters are no longer independent draws. The §9.8 correlation experiment
 > compared independent draws; a rerun would measure a different quantity.
 
+### 11a. The antithesis argues independently, it does not mirror
+
+Telling the antithesis to contradict the thesis produced contradictions of a
+degenerate kind: the thesis's own sentence with "not" inserted. A mirror
+concedes the thesis's framing, predicate and choice of authority and disputes
+only the sign, so it carries no adversarial information.
+
+`IndependenceGuard` rejects a proposition that differs from an opposing one in
+polarity while carrying essentially the same vocabulary. **Both** conditions are
+required — shared vocabulary alone is expected, and a polarity difference alone
+is what real disagreement looks like. Rejected drafts are re-rolled with
+feedback naming the offending propositions.
+
+Unlike the citation channel this is a **quality** property, not a safety one, so
+it degrades visibly instead of failing closed: if every attempt mirrors, the
+least-bad draft is kept with each mirroring proposition flagged in its `note`,
+which reaches the copy payloads and the API. The thesis is not subject to the
+guard — it is generated first and has nothing to mirror.
+
+Thresholds are calibrated against observed data (real mirrors jaccard
+0.55–1.00, independent counter-theories 0.00–0.12) and sit in the gap between
+the two populations. Both populations are test fixtures, so a change that
+collapses the separation fails the suite.
+
+> Enforced by `test_independence_guard_catches_polarity_flip_mirrors`,
+> `test_independence_guard_allows_a_real_counter_theory`,
+> `test_independence_guard_needs_both_shared_words_and_flipped_polarity`,
+> `test_independence_guard_ignores_propositions_too_short_to_judge`,
+> `test_independence_guard_scan_raises_and_names_every_mirror`,
+> `test_independence_guard_is_inert_without_an_opposing_side`,
+> `test_antithesis_that_mirrors_is_regenerated_with_feedback`,
+> `test_persistent_mirroring_degrades_visibly_rather_than_failing_closed`,
+> `test_thesis_is_not_subject_to_the_independence_guard`.
+
 ### 12. Derived structure reaches the API as typed fields
 
 `regenerated`, `crux_note`, `outcome_bearing` and `nli_source` are fields on
@@ -348,6 +382,20 @@ What remains unenforced is the *rate itself*. Nothing asserts a minimum crux
 yield against live models, because that needs a live run and a question set with
 known-contested answers.
 
+### D3c. Crux count is not a quality metric
+
+Independence and direct contradiction pull against each other: the more
+genuinely independent the antithesis's theory, the less likely it addresses the
+same predicate as any thesis proposition, and the fewer pairs the NLI can call
+contradictions. Measured, eliminating mirrors moved contradiction from 75% to
+31% and neutral from 22% to 64% while *increasing* the number of distinct
+disagreements (REMEDIATION §10.3).
+
+Nothing enforces this, and nothing can: it is a warning, not a rule. **Do not
+optimise for crux count.** A configuration that maximises cruxes is one that
+maximises mirrors, because flipping the sign of a sentence guarantees a
+contradiction.
+
 ### D3b. The crux table contains near-duplicates
 
 Each side emits 3 propositions that are often near-paraphrases of one another,
@@ -355,6 +403,10 @@ and the extractor compares the full cross-product, so a single disagreement can
 be reported many times — 8 cruxes for one disputed predicate on one measured
 question. The crux count therefore means "how many contradicting pairs", not
 "how many issues are in dispute".
+
+The independence guard (rule 11a) removed most of this, since mirrors were the
+main source of the redundancy: the worst case fell from 8 cruxes to 3. Redundancy
+*within the thesis's own* propositions is untouched, so the caveat stands.
 
 Nothing deduplicates the table or enforces a bound on it.
 `test_empty_crux_table_states_the_reason` covers the empty case; there is no
