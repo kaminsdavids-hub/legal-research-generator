@@ -205,6 +205,39 @@ class CourtListenerClient:
         return cast(dict[str, Any], data)
 
 
+def _resolves(match: dict[str, Any] | None) -> tuple[bool, str]:
+    """Does this citation-lookup result confirm the citation?
+
+    ``200`` is a single match. ``300`` means CourtListener returned several
+    clusters, which is usually *duplicate records of one opinion* rather than an
+    ambiguous citation — it holds two entries for Sorrell, Rice, West Virginia
+    v. EPA, AOSI II and Humanitarian Law Project, among others. Treating 300 as
+    unverified made five valid Supreme Court authorities permanently
+    unverifiable, which reads as a fabricated citation rather than a quirk of
+    the upstream database.
+
+    A 300 is accepted only when every returned cluster names the same case. When
+    the clusters name *different* cases the citation really is ambiguous, and
+    guessing which one was meant is exactly the error the gate exists to catch.
+    """
+    if not match or not match.get("clusters"):
+        return False, ""
+    status = match.get("status")
+    if status == 200:
+        return True, ""
+    if status != 300:
+        return False, ""
+
+    names = {
+        " ".join(str(c.get("case_name", "")).lower().split())
+        for c in match["clusters"]
+    }
+    names.discard("")
+    if len(names) == 1:
+        return True, f" ({len(match['clusters'])} duplicate cluster(s) for one opinion)"
+    return False, ""
+
+
 def verify_position(
     position: Position,
     client: CourtListenerClient,
@@ -268,10 +301,12 @@ def verify_position(
             compact = " ".join(new_slot.normalized_cite.split())
             match = found.get(compact)
 
-        if match and match.get("status") == 200 and match.get("clusters"):
+        resolved, why = _resolves(match)
+        if resolved:
+            clusters = match["clusters"]  # type: ignore[index]
             new_slot.status = SlotStatus.VERIFIED
-            new_slot.cluster_id = str(match["clusters"][0].get("id", ""))
-            new_slot.note = "resolved by CourtListener v4 citation-lookup"
+            new_slot.cluster_id = str(clusters[0].get("id", ""))
+            new_slot.note = f"resolved by CourtListener v4 citation-lookup{why}"
         else:
             new_slot.status = SlotStatus.NOT_FOUND
             if match is None:

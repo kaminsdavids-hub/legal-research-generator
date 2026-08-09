@@ -1723,3 +1723,53 @@ def test_annotation_is_skipped_when_the_retriever_cannot_supply_one() -> None:
     turn = chat.chat("Q?")
     assert turn.thesis.propositions[0].normalized_cite == "392 U.S. 1"
     assert "NOT CURRENTLY OPERATIVE" not in turn.thesis.propositions[0].note
+
+
+def _lookup_payload(status: int, names: list[str], cite: str = "564 U.S. 552") -> list[dict]:
+    return [{
+        "citation": cite,
+        "normalized_citations": [cite],
+        "status": status,
+        "clusters": [{"id": 100 + i, "case_name": n} for i, n in enumerate(names)],
+    }]
+
+
+def _verify_one(payload: list[dict], cite: str = "564 U.S. 552") -> CitationSlot:
+    client = CourtListenerClient(token="t", http=_FakeHTTP(status_code=200, payload=payload))
+    pos = Position(
+        side="thesis", model="m", family="f",
+        propositions=[CitationSlot(proposition="P.", normalized_cite=cite)],
+    )
+    return verify_position(pos, client).citations[0]
+
+
+def test_duplicate_clusters_for_one_opinion_still_verify() -> None:
+    """CourtListener returns status 300 when it holds several records of one case.
+
+    Treating that as unverified made five valid Supreme Court authorities
+    permanently unverifiable, which reads as a fabricated citation rather than a
+    quirk of the upstream database.
+    """
+    slot = _verify_one(_lookup_payload(300, ["Sorrell v. IMS Health Inc.", "Sorrell v. IMS Health Inc."]))
+    assert slot.status == SlotStatus.VERIFIED
+    assert "duplicate cluster" in slot.note
+    assert slot.cluster_id == "100"
+
+
+def test_genuinely_ambiguous_citation_does_not_verify() -> None:
+    """Different case names means the citation really is ambiguous."""
+    slot = _verify_one(_lookup_payload(300, ["Smith v. Jones", "Doe v. Roe"]))
+    assert slot.status == SlotStatus.NOT_FOUND
+    assert "300" in slot.note
+
+
+def test_single_match_still_verifies_unchanged() -> None:
+    slot = _verify_one(_lookup_payload(200, ["Sorrell v. IMS Health Inc."]))
+    assert slot.status == SlotStatus.VERIFIED
+    assert "duplicate cluster" not in slot.note
+
+
+def test_status_300_with_no_clusters_does_not_verify() -> None:
+    payload = [{"citation": "564 U.S. 552", "normalized_citations": ["564 U.S. 552"],
+                "status": 300, "clusters": []}]
+    assert _verify_one(payload).status == SlotStatus.NOT_FOUND
