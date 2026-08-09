@@ -779,3 +779,250 @@ within-side redundancy in the *thesis* is untouched.
 
 **Cost.** 64.9 min for 4 questions versus 46.1 min without the guard, the
 difference being the retries on two questions.
+
+## 11. Building the eval harness (2026-08-08 / 09)
+
+A 40-question First Amendment eval set was supplied for the module. Standing it
+up surfaced eight further defects. They are recorded together because the
+pattern matters more than any one of them: **three would have shipped to users
+regardless of any eval, and four were in the eval machinery itself — where a
+bug does not break anything visibly, it just makes the numbers wrong.**
+
+Question A1 failed five times in a row, for five different genuine reasons. At
+the third failure the intended report was "an 8B synthesis model will not act on
+a status flag" — a negative result about model capability. That would have been
+wrong, and it would have been an artifact of the harness, which is the same
+error class §5 of this file already records. It was avoided only by testing the
+two candidate explanations separately rather than iterating on the fix.
+
+### 11.1. The eval's own premises did not fit the module (blocker, resolved)
+
+The set's first hard gate requires that "every case, statute, regulation and
+Federal Register document cited must exist in the retrieval log". The module is
+*forbidden* from emitting citations: a proposition naming a case is discarded
+and regenerated. Tested against the live channel, **12 of 14 sampled must-engage
+anchors** — Bernstein, Junger, Sorrell, Reed, TikTok v. Garland, Lamont, HLP,
+McCullen, NAACP, Near, West Virginia v. EPA, Defense Distributed — would cause
+the turn to be thrown away if a debater wrote them.
+
+Resolved by measuring the gate against the *resolved slots and a retrieval log*
+rather than the prose. That is what the module actually claims to do: the
+proposition is citation-free, the authority lives in the slot, and
+`[UNSUPPORTED: ...]` markers become a first-class eval signal instead of noise.
+
+The corpus was also unusable: 6 records, all securities fraud, containing none
+of the ~100 authorities the set names. 34 case authorities were resolved against
+CourtListener and 7 non-case records hand-authored and maintainer-verified.
+
+### 11.2. Verified-but-rescinded rendered as clean authority (user-facing)
+
+`copy._slot_marker` returned a bare `[90 Fed. Reg. 4544]` for any slot in
+`VERIFIED` state. But **verified means the citation resolves, not that the
+authority is still good law.** A rescinded rule that resolved cleanly rendered
+to the reader as pasteable authority with nothing indicating it had been
+repealed.
+
+This is the same defect class the module already guards against everywhere else
+— the `[UNSUPPORTED]` discipline — in the one state that had been assumed safe.
+It reached the copy payloads and the UI and was entirely independent of the
+eval. The marker now carries the status, and the marker string is a shared
+constant so the producer and renderer cannot drift apart and silently stop
+matching.
+
+### 11.3. Five Supreme Court authorities were permanently unverifiable (user-facing)
+
+`verify_position` accepted only HTTP `status == 200`. CourtListener answers
+`300` when it holds *duplicate records of one opinion*, which it does for
+Sorrell, Rice, West Virginia v. EPA, AOSI II and Humanitarian Law Project. Those
+five could never verify, and the citation-integrity gate reported them
+identically to a fabricated cite.
+
+The ingest script had handled 300 correctly when *building* the corpus; the
+runtime path had not. So the corpus contained authorities the module could never
+confirm — a mismatch between how the ground truth was built and how the system
+consumes it.
+
+Fixed in two steps, and the first was wrong. Requiring every cluster to carry an
+identical case name verified Sorrell but still failed AOSI II, which is stored
+as both "Agency for Int'l Dev. v. Alliance for Open Soc'y Int'l, Inc." and
+"Agency for Int'l Development v. Alliance for Open Society" — one opinion in two
+abbreviation styles, read as two different cases. Sameness is now decided on
+**filing date** first and name second. A 300 whose clusters carry different
+dates stays `NOT_FOUND`, because guessing which case was meant is exactly the
+error the gate exists to catch.
+
+### 11.4. Non-case authority could never be proposed (user-facing)
+
+`_CorpusCiteRetriever._format` emitted a citation only for records with a
+complete volume/reporter/page triple, so every statute, regulation and Federal
+Register document was unretrievable. The temporal-validity gate is *entirely*
+about that material, so it could never have fired.
+
+Those now render as `"<code> <section>"`. That raised a verification question:
+CourtListener cannot adjudicate `15 C.F.R. 734.7` no matter how correct the
+section is, so requiring a cluster would fail every response that correctly
+relies on the EAR published exclusion. Such authorities are verified by the
+human-checked corpus instead — but must still appear in the retrieval log, so a
+fabricated C.F.R. section still fails.
+
+### 11.5. The temporal gate nearly read its own machinery's output
+
+Nothing carried the corpus's status into the slot, so no role learned a rule was
+repealed and the module could not have passed. The obvious fix — propagate the
+status into `slot.note` — would have **broken the gate**, because the gate read
+`slot.note`. Every question would have passed because our own code wrote the
+string the gate was looking for: a gate testing itself, reporting green forever.
+
+Two-sided fix. The status is propagated for *rendering* (real correctness,
+independent of the eval) and the gate now reads **model-authored prose only** —
+propositions and synthesis, never the note. In practice that tests the
+synthesis, the only role that runs after retrieval; that is the honest scope and
+is documented in the gate's docstring.
+
+Annotation also had to move *after* verification, since `verify_position`
+rewrites `note` on all four of its branches and was silently destroying it.
+
+### 11.6. A log wrapper silently disabled the annotator
+
+The temporal gate failed three consecutive live runs while the module was
+correct. `LoggingRetriever` wraps the retriever to capture the retrieval log but
+forwarded only `propose()`. The engine probes for the optional annotator with
+`getattr(retriever, "annotate", None)`, so wrapping turned annotation off
+entirely.
+
+A decorator that quietly drops an optional capability is worse than one that
+never had it: the probe is designed to degrade gracefully and cannot distinguish
+"not supported" from "supported but hidden behind a wrapper".
+
+Diagnosed by testing the halves separately — the annotation plumbing works when
+exercised directly, and both `gemma3:4b` and `hermes3:8b` acknowledge a
+rescission when the note is genuinely in their prompt. Both healthy in
+isolation, so the fault was between them.
+
+**An offline test passed while production failed, because the test used the
+adapter directly and production goes through the wrapper.** The test exercised a
+path that does not exist in the real system.
+
+### 11.7. The judge could not rank anything
+
+`saul:7b-instruct-v1` scored a response consisting entirely of
+`(generation failed or contained a citation string)` placeholders **8.00/10**,
+including `crux_identification: 10` for a turn with no crux table, and spread
+only **1.00** across deliberately graded fixtures, in the wrong order.
+
+That voided the 8.500 reported from an earlier smoke run. The hard gates are
+deterministic code and stood; the 1–10 scores were noise. Left unchecked, the
+full run would have produced a plausible ~8.4 and the plateau rule — mean change
+< 0.2 across three rounds — would have declared convergence on round one,
+because the judge's output barely moves regardless of input.
+
+Of the local models only `hermes3:8b` discriminates: 1.2 / 1.8 / 1.8 / 8.4,
+correctly ordered, spread 7.20. `qwen2.5-coder` floors everything at 1.8;
+`llama3.1` orders correctly but separates by only 2.80.
+
+`hermes3` was the thesis model and a judge may not share a family with a
+debater, so the roles swapped: `saul` argues (it is the legal-domain model,
+better suited to argument than to grading rubrics) and `hermes3` judges. It was
+checked as a debater first, the same test `gpt-oss` failed in §8a. **Production
+defaults moved with the eval defaults deliberately** — an eval that scores a
+lineup nobody ships measures the wrong system.
+
+`evals/calibrate_judge.py` is committed so the next judge change is checked
+rather than assumed.
+
+### 11.8. A broken judge was scored as zero
+
+D1's judge echoed the crux table back instead of scoring. The harness recorded
+that unparseable output as `0.0`, indistinguishable from a failed hard gate or a
+worthless response.
+
+The first full run therefore reported **6.519 overall and cluster D at 5.84, the
+worst of six**. Excluding that one question: **6.729 overall and cluster D at
+7.30, the best**. A single conflation inverted the ranking the eval exists to
+produce.
+
+A judge failure is *missing data*. `score` is now `None` when the gates passed
+but the judge produced nothing usable, `0.0` only for a real gate failure, and
+means are taken over scored results only.
+
+### 11.9. One timeout discarded an entire run
+
+Two repeat runs launched for a variance estimate both died on
+`httpx.ReadTimeout` and wrote nothing. Run 2 lost **4.4 hours** of completed
+questions to a single slow call. Over a three-hour run that is not an edge case,
+it is the expected outcome.
+
+Three causes. The per-call timeout was 300s while Ollama swaps models between
+the five roles and a cold load alone costs ~40s — the server log shows a `500`
+after `5m09s`; it is now 900s. A failure anywhere killed the process; each
+question is now isolated and a dead one is recorded as unmeasured. Nothing was
+written until the end; results are now checkpointed after every question.
+
+Fixing this exposed a latent bug: `gates_passed` used `all(self.gates)`, and
+`all([])` is `True`, so a crashed question with no gates would have reported as
+**passing both of them**.
+
+### 11.10. Quota: one full run per day
+
+The two repeat runs were also doomed for a second reason. CourtListener allows
+**125 lookups/day** and a full run costs ~64, so the quota had been exhausted by
+the first successful run plus the smoke runs. Every citation came back
+`not_found` — including ones verified an hour earlier — and the runs were
+stopped rather than left to spend nine hours producing sixty-four zeros.
+
+The module's `RateBudget` could not have caught this: it is process-local by
+design (§9.7, OBSERVABLES D5) and starts every run believing the full quota is
+available. That decision was recorded as low-risk; this is the cost of it
+showing up.
+
+`PersistentCiteCache` now stores results on disk, keyed on the **individual
+citation** rather than the request's text block, so a later run whose
+propositions produce the same authorities in a different order — or a subset —
+still hits. Repeat runs cost no quota. Only successful lookups are stored:
+caching a 429 would turn a transient outage into a permanent "this citation does
+not exist", indistinguishable from a fabricated cite.
+
+### 11.11. Results, and what they do not show
+
+One clean 32-question run: **6.729** over 31 scored, **zero gate failures**.
+
+| cluster | mean | n |
+|---|---|---|
+| D — deemed exports, academic freedom | 7.30 | 4/5 |
+| C — receipt rights, Lamont | 7.20 | 6 |
+| F — tailoring, less-restrictive alternatives | 6.90 | 4 |
+| B — prior restraint, EAR exclusion | 6.80 | 6 |
+| E — national-security deference | 6.36 | 5 |
+| A — weights as speech | 6.00 | 6 |
+
+Evidence the scores track something real: questions that yielded cruxes score
+**8.19** on `crux_identification` against **6.80** for those that yielded none —
+a correlation with ground truth the judge was never shown.
+
+Against that: n=1 per question, so there is no variance estimate and cluster
+gaps of a few tenths on n=4–6 are not findings. `counterargument_anticipation`
+is the weakest criterion at 5.66, consistent with no role getting a second pass
+after seeing the other side. **The judge is calibrated, not validated**: it
+separates weak work from strong, which is not the same as agreeing with a
+lawyer's judgment. For a claim in a paper, grade a sample by hand and check the
+correlation.
+
+Holdouts A4, A8, B4, C3, D3, E3, F3 and F6 have never been run. A mismatch
+between the per-question flags and the declared holdout list raises rather than
+leaking one into an optimization loop.
+
+### 11.12. Environment constraints worth recording
+
+**16 GB RAM cannot hold the five roles.** Loaded footprints run ~1.8× disk size
+(`nemotron-3-nano:4b` is 2.8 GB on disk, 5.1 GB resident); the five total ~35 GB
+loaded, against capacity for about two. Ollama therefore swaps continuously and
+a full run takes ~4.5h. **Raising `OLLAMA_KEEP_ALIVE` does not help** — every
+question touches all five roles in sequence, so eviction happens regardless.
+
+The change that would help is batching by role rather than by question: all
+theses, then all antitheses, and so on, cutting ~160 model loads to ~5. It is
+not done, because the runner would then orchestrate the stages itself rather
+than calling `DialecticChat.chat()`, and the eval would exercise a
+reimplementation of the production path instead of the path itself. Given four
+of the eight bugs above appeared only in the real path, that trade was not
+taken.
