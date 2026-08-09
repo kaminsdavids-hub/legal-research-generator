@@ -41,18 +41,27 @@ from modules.dialectic.roles import detect_family  # noqa: E402
 from modules.dialectic.service import _ClientAdapter, _CorpusCiteRetriever  # noqa: E402
 
 
-def _status_index(corpus_path: str) -> dict[str, tuple[str, str]]:
-    """Map "<volume> <reporter> <page>" and code/section to (status, note)."""
+def _corpus_index(corpus_path: str) -> tuple[dict[str, tuple[str, str]], set[str]]:
+    """Return (status by cite, cites CourtListener cannot adjudicate).
+
+    The second set is statutes, regulations and secondary material: the corpus
+    is their verifier, because a citation-lookup call for a C.F.R. section
+    returns nothing no matter how correct the section is.
+    """
     from legal_research.citations.corpus import load_corpus
 
     index: dict[str, tuple[str, str]] = {}
+    corpus_verified: set[str] = set()
     for record in load_corpus(corpus_path).records:
         entry = (record.status.value, record.status_note)
         if record.volume is not None and record.page is not None and record.reporter:
             index[f"{record.volume} {record.reporter} {record.page}"] = entry
+            continue
         if record.code and record.section:
-            index[f"{record.code} {record.section}"] = entry
-    return index
+            cite = f"{record.code} {record.section}"
+            index[cite] = entry
+            corpus_verified.add(cite)
+    return index, corpus_verified
 
 
 def main() -> int:
@@ -149,7 +158,7 @@ def main() -> int:
     if args.include_holdout:
         print("!! HOLDOUT SET INCLUDED - final validation only, never optimization\n")
 
-    status_by_cite = _status_index(args.corpus)
+    status_by_cite, corpus_verified = _corpus_index(args.corpus)
     report = RunReport(eval_set=eval_set.name)
     started = time.time()
 
@@ -158,7 +167,7 @@ def main() -> int:
         print(f"[{i}/{len(questions)}] {question.id} ({question.cluster})", flush=True)
         turn = chat.chat(question.prompt())
         gates = [
-            gate_citation_integrity(turn, retriever.retrieved_cites),
+            gate_citation_integrity(turn, retriever.retrieved_cites, corpus_verified),
             gate_temporal_validity(turn, status_by_cite),
         ]
         verdict = judge_response(judge, question, turn)

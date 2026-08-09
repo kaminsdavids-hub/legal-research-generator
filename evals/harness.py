@@ -140,13 +140,24 @@ def _slots(turn: DialecticTurn) -> list[Any]:
     return [*turn.thesis.propositions, *turn.antithesis.propositions]
 
 
-def gate_citation_integrity(turn: DialecticTurn, retrieved: set[str]) -> GateResult:
+def gate_citation_integrity(
+    turn: DialecticTurn,
+    retrieved: set[str],
+    corpus_verified: set[str] | None = None,
+) -> GateResult:
     """Every citation on a slot must have come through retrieval and verified.
 
     Two distinct failures are reported separately because they mean different
     things: a cite that never appeared in the retrieval log is fabricated, while
     a cite that was retrieved but not verified is merely unconfirmed.
+
+    ``corpus_verified`` holds citations whose authority CourtListener cannot
+    adjudicate — statutes, regulations, Federal Register documents. Requiring a
+    CourtListener cluster for ``15 C.F.R. 734.7`` would fail every response that
+    correctly relies on it, so for those the human-checked corpus is the
+    verifier and retrieval-log membership is the integrity test.
     """
+    corpus_verified = corpus_verified or set()
     fabricated: list[str] = []
     unverified: list[str] = []
     for slot in _slots(turn):
@@ -155,6 +166,8 @@ def gate_citation_integrity(turn: DialecticTurn, retrieved: set[str]) -> GateRes
             continue
         if cite not in retrieved:
             fabricated.append(cite)
+        elif cite in corpus_verified:
+            continue  # verified by the corpus; CourtListener has no jurisdiction
         elif slot.status != SlotStatus.VERIFIED:
             unverified.append(f"{cite} ({slot.status.value})")
 

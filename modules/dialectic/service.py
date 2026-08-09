@@ -65,13 +65,26 @@ class _CorpusCiteRetriever:
 
     @staticmethod
     def _format(record: Any) -> str:
-        """Return ``"<volume> <reporter> <page>"`` or "" when incomplete."""
+        """Normalized citation for a corpus record, or "" when unformattable.
+
+        Cases render as ``"<volume> <reporter> <page>"``, which CourtListener's
+        citation-lookup endpoint can adjudicate. Statutes and regulations render
+        as ``"<code> <section>"``: CourtListener cannot verify those, but they
+        must still be retrievable, or an authority like the EAR published
+        exclusion could never be proposed at all and a rule's operative status
+        could never be put in issue.
+        """
         volume = getattr(record, "volume", None)
         page = getattr(record, "page", None)
         reporter = str(getattr(record, "reporter", "") or "").strip()
-        if volume is None or page is None or not reporter:
-            return ""
-        return f"{volume} {reporter} {page}"
+        if volume is not None and page is not None and reporter:
+            return f"{volume} {reporter} {page}"
+
+        code = str(getattr(record, "code", "") or "").strip()
+        section = str(getattr(record, "section", "") or "").strip()
+        if code and section:
+            return f"{code} {section}"
+        return ""
 
     def propose(self, court_hint: str, proposition: str) -> list[str]:
         query = f"{court_hint} {proposition}".strip()

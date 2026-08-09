@@ -309,3 +309,35 @@ def test_plateau_needs_three_consecutive_small_changes() -> None:
 def test_plateau_is_insensitive_to_direction() -> None:
     """A steady decline is a plateau too; the rule is about magnitude."""
     assert has_plateaued([6.0, 5.9, 5.8, 5.7])
+
+
+def test_citation_gate_accepts_corpus_verified_non_case_authority() -> None:
+    """CourtListener cannot adjudicate a C.F.R. section; the corpus verifies it.
+
+    Requiring a cluster for `15 C.F.R. 734.7` would fail every response that
+    correctly relies on the EAR published exclusion.
+    """
+    turn = _turn(
+        CitationSlot(
+            proposition="Published information is outside the EAR.",
+            normalized_cite="15 C.F.R. 734.7",
+            status=SlotStatus.NOT_FOUND,
+            note="CourtListener returned no result",
+        )
+    )
+    assert not gate_citation_integrity(turn, {"15 C.F.R. 734.7"}).passed
+    assert gate_citation_integrity(
+        turn, {"15 C.F.R. 734.7"}, corpus_verified={"15 C.F.R. 734.7"}
+    ).passed
+
+
+def test_corpus_verification_does_not_excuse_a_fabricated_cite() -> None:
+    """Corpus standing is not a licence to invent; it must still be retrieved."""
+    turn = _turn(
+        CitationSlot(
+            proposition="P.", normalized_cite="15 C.F.R. 999.9", status=SlotStatus.NOT_FOUND
+        )
+    )
+    result = gate_citation_integrity(turn, set(), corpus_verified={"15 C.F.R. 734.7"})
+    assert not result.passed
+    assert "not in the retrieval log" in result.detail
