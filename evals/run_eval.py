@@ -70,11 +70,16 @@ def main() -> int:
     parser.add_argument("--corpus", default="data/corpus/sample_corpus.jsonl")
     parser.add_argument("--base-url", default="http://127.0.0.1:11434/v1")
     parser.add_argument("--timeout", type=float, default=300.0)
-    parser.add_argument("--thesis", default="hermes3:8b")
+    parser.add_argument("--thesis", default="saul:7b-instruct-v1")
     parser.add_argument("--antithesis", default="llama3.1:8b")
     parser.add_argument("--synthesis", default="gemma3:4b")
     parser.add_argument("--nli", default="nemotron-3-nano:4b")
-    parser.add_argument("--judge", default="saul:7b-instruct-v1", help="fifth model; must be a distinct family")
+    parser.add_argument(
+        "--judge",
+        default="hermes3:8b",
+        help="fifth model; must be a distinct family. Calibrate with calibrate_judge.py "
+        "before trusting a new one: saul rated pure failure 8.0/10.",
+    )
     parser.add_argument("--limit", type=int, default=0, help="run only the first N questions")
     parser.add_argument(
         "--include-holdout",
