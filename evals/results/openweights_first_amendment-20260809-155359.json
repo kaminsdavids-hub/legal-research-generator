@@ -1,0 +1,91 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 0.0,
+  "scored_count": 2,
+  "total_count": 2,
+  "cluster_means": {
+    "A": 0.0
+  },
+  "gate_failures": [
+    "A1",
+    "A2"
+  ],
+  "unscored_judge_failed": [],
+  "run_errors": {},
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['591 U.S. 430 (not_found)', '209 F.3d 481 (not_found)', '564 U.S. 552 (not_found)', '564 U.S. 552 (not_found)', '564 U.S. 786 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        5,
+        7,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "..."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['494 U.S. 259 (not_found)', '176 F.3d 1132 (not_found)', '176 F.3d 1132 (not_found)', '391 U.S. 367 (not_found)', '209 F.3d 481 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        4,
+        5,
+        7,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in steelmanning by considering the strongest arguments on both sides. However, the authorities cited are all marked as 'unsupported' and 'verification failed', indicating a lack of controlling or persuasive precedent to ground the analysis. The counterargument anticipation is moderate, acknowledging potential government interests but not delving deeply into procedural or standing issues. Crux identification is strong, focusing on the core constitutional question. Synthesis discipline is high, offering a plausible outcome based on the given premises, but again without firm doctrinal footing."
+    }
+  ]
+}

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 import time
 from collections import OrderedDict, deque
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -62,6 +64,99 @@ class ContentCache:
         key = self.key(text)
         with self._lock:
             return key in self._data
+
+
+class PersistentCiteCache:
+    """Disk-backed cache of citation-lookup results, keyed per citation.
+
+    ``ContentCache`` dies with the process, so every run re-verified the same
+    authorities from scratch. At roughly 64 lookups per full eval run against a
+    125/day quota, that caps the project at one run per day and made a repeat
+    run for variance impossible.
+
+    Keyed on the individual citation rather than the request's text block, so a
+    later run whose propositions produce the same authorities in a different
+    order, or a subset of them, still hits. Block-level keying would miss all of
+    those.
+
+    Only successful lookups are stored. Caching a 429 or a timeout would turn a
+    transient outage into a permanent "this citation does not exist", which is
+    indistinguishable from a fabricated cite.
+    """
+
+    def __init__(self, path: str | Path, *, max_age_days: float | None = None) -> None:
+        self.path = Path(path)
+        self.max_age_days = max_age_days
+        self._data: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        self._load()
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            _LOG.warning("cite cache at %s unreadable (%s); starting empty", self.path, exc)
+            return
+        if isinstance(raw, dict):
+            self._data = {k: v for k, v in raw.items() if isinstance(v, dict)}
+
+    def _fresh(self, entry: dict[str, Any]) -> bool:
+        if self.max_age_days is None:
+            return True
+        stamped = entry.get("cached_at")
+        if not isinstance(stamped, int | float):
+            return False
+        return (time.time() - stamped) <= self.max_age_days * 86400
+
+    def get(self, cite: str) -> dict[str, Any] | None:
+        with self._lock:
+            entry = self._data.get(cite)
+            if entry is None or not self._fresh(entry):
+                return None
+            item = entry.get("item")
+            return dict(item) if isinstance(item, dict) else None
+
+    def get_all(self, cites: Sequence[str]) -> list[dict[str, Any]] | None:
+        """Every result for *cites*, or ``None`` when any is missing.
+
+        All-or-nothing on purpose: a partial hit still needs a network call, and
+        serving half a lookup from cache would silently drop the rest.
+        """
+        found: list[dict[str, Any]] = []
+        for cite in cites:
+            item = self.get(cite)
+            if item is None:
+                return None
+            found.append(item)
+        return found
+
+    def put_many(self, items: Iterable[dict[str, Any]]) -> None:
+        """Store successful results under every citation form they answer to."""
+        now = time.time()
+        with self._lock:
+            for item in items:
+                keys = {str(item.get("citation") or "")}
+                keys.update(str(n) for n in (item.get("normalized_citations") or []))
+                keys.discard("")
+                for key in keys:
+                    self._data[key] = {"item": item, "cached_at": now}
+        self._flush()
+
+    def _flush(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        with self._lock:
+            payload = json.dumps(self._data, indent=1)
+        # Write-then-rename: a crash mid-write must not leave a corrupt cache
+        # that reads as "these citations do not exist".
+        tmp.write_text(payload, encoding="utf-8")
+        tmp.replace(self.path)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._data)
 
 
 @dataclass
@@ -148,17 +243,22 @@ class CourtListenerClient:
         budget: RateBudget | None = None,
         cache: ContentCache | None = None,
         http: httpx.Client | None = None,
+        cite_cache: PersistentCiteCache | None = None,
     ) -> None:
         self.token = token
         self.base_url = base_url.rstrip("/")
         self.budget = budget or RateBudget()
         self.cache = cache or ContentCache()
         self.http = http or httpx.Client()
+        #: Optional cross-process cache. Without it every run re-verifies the
+        #: same authorities and burns the daily quota again.
+        self.cite_cache = cite_cache
 
     def lookup(
         self,
         text_block: str,
         ledger: Any | None = None,
+        cites: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         """Return citation-lookup response, spending budget only on real network calls."""
 
@@ -167,6 +267,15 @@ class CourtListenerClient:
             if ledger is not None:
                 ledger.cache_hits += 1
             return cast(dict[str, Any], cached)
+
+        # A persistent per-citation cache can answer the whole block without a
+        # call, which is what makes a repeat run cost no quota.
+        if self.cite_cache is not None and cites:
+            hit = self.cite_cache.get_all(cites)
+            if hit is not None:
+                if ledger is not None:
+                    ledger.cache_hits += 1
+                return {"results": hit}
 
         self.budget.check()
 
@@ -200,6 +309,9 @@ class CourtListenerClient:
 
         self.budget.spend()
         self.cache.set(text_block, data)
+        if self.cite_cache is not None:
+            results = data if isinstance(data, list) else data.get("results", [])
+            self.cite_cache.put_many(r for r in results if isinstance(r, dict))
         if ledger is not None:
             ledger.calls_spent += 1
         return cast(dict[str, Any], data)
@@ -265,7 +377,9 @@ def verify_position(
 
     # The endpoint parses a free-text block; batch every normalized cite in it.
     block = " ".join(slot.normalized_cite for slot in filled)
-    data = client.lookup(block, ledger=ledger)
+    data = client.lookup(
+        block, ledger=ledger, cites=[slot.normalized_cite for slot in filled]
+    )
 
     if isinstance(data, list):
         data = {"results": data}

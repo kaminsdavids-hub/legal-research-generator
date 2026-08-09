@@ -44,3 +44,6 @@ logs/
 # Env backups: these hold real secrets and must never be committed.
 .env.backup-*
 .env.*.bak
+
+# Eval caches and results are local artefacts, not source.
+evals/.cache/

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -1808,3 +1809,63 @@ def test_status_300_with_no_clusters_does_not_verify() -> None:
     payload = [{"citation": "564 U.S. 552", "normalized_citations": ["564 U.S. 552"],
                 "status": 300, "clusters": []}]
     assert _verify_one(payload).status == SlotStatus.NOT_FOUND
+
+
+def test_persistent_cite_cache_survives_a_new_client(tmp_path: Path) -> None:
+    """Without this, every run re-verifies the same authorities.
+
+    A full eval run costs ~64 lookups against a 125/day quota, so a
+    process-local cache caps the project at one run per day.
+    """
+    from modules.dialectic.verification import PersistentCiteCache
+
+    path = tmp_path / "cache.json"
+    payload = [
+        {"citation": "392 U.S. 1", "normalized_citations": ["392 U.S. 1"],
+         "status": 200, "clusters": [{"id": 1, "case_name": "Terry v. Ohio"}]},
+    ]
+    http = _FakeHTTP(status_code=200, payload=payload)
+    c1 = CourtListenerClient(token="t", http=http, cite_cache=PersistentCiteCache(path))
+    c1.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+    assert len(http.calls) == 1
+
+    # A brand-new client and cache object, as a later run would build.
+    http2 = _FakeHTTP(status_code=200, payload=payload)
+    c2 = CourtListenerClient(token="t", http=http2, cite_cache=PersistentCiteCache(path))
+    out = c2.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+    assert not http2.calls, "second run should spend no quota"
+    assert out["results"][0]["clusters"][0]["case_name"] == "Terry v. Ohio"
+
+
+def test_cite_cache_is_all_or_nothing(tmp_path: Path) -> None:
+    """A partial hit still needs the call; serving half would drop the rest."""
+    from modules.dialectic.verification import PersistentCiteCache
+
+    cache = PersistentCiteCache(tmp_path / "c.json")
+    cache.put_many([{"citation": "392 U.S. 1", "normalized_citations": ["392 U.S. 1"],
+                     "status": 200, "clusters": [{"id": 1}]}])
+    assert cache.get_all(["392 U.S. 1"]) is not None
+    assert cache.get_all(["392 U.S. 1", "384 U.S. 436"]) is None
+
+
+def test_failed_lookups_are_never_cached(tmp_path: Path) -> None:
+    """Caching a 429 would make a transient outage a permanent 'does not exist'."""
+    from modules.dialectic.verification import PersistentCiteCache
+
+    path = tmp_path / "c.json"
+    cache = PersistentCiteCache(path)
+    client = CourtListenerClient(
+        token="t", http=_FakeHTTP(status_code=429, payload=[]), cite_cache=cache
+    )
+    out = client.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+    assert out["error"] == "rate_limited"
+    assert len(cache) == 0
+    assert PersistentCiteCache(path).get("392 U.S. 1") is None
+
+
+def test_corrupt_cache_file_does_not_crash_a_run(tmp_path: Path) -> None:
+    from modules.dialectic.verification import PersistentCiteCache
+
+    path = tmp_path / "c.json"
+    path.write_text("{not json at all")
+    assert len(PersistentCiteCache(path)) == 0

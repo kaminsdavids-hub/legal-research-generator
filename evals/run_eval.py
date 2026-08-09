@@ -94,6 +94,11 @@ def main() -> int:
         help="FINAL VALIDATION ONLY - never during optimization",
     )
     parser.add_argument("--out", default=str(ROOT / "evals/results"))
+    parser.add_argument(
+        "--cite-cache",
+        default=str(ROOT / "evals/.cache/courtlistener.json"),
+        help="persistent citation-lookup cache shared across runs",
+    )
     args = parser.parse_args()
 
     # The judge is a fifth role and gets the same family discipline.
@@ -142,9 +147,19 @@ def main() -> int:
     courtlistener = None
     token = str(getattr(settings, "courtlistener_token", "") or "").strip()
     if token:
-        from modules.dialectic.verification import CourtListenerClient, RateBudget
+        from modules.dialectic.verification import (
+            CourtListenerClient,
+            PersistentCiteCache,
+            RateBudget,
+        )
 
-        courtlistener = CourtListenerClient(token=token, budget=RateBudget())
+        # Cross-run cache. A full run costs ~64 lookups against a 125/day quota,
+        # so without this a repeat run cannot be done on the same day at all.
+        cite_cache = PersistentCiteCache(args.cite_cache)
+        print(f"cite cache: {args.cite_cache} ({len(cite_cache)} citation(s) known)")
+        courtlistener = CourtListenerClient(
+            token=token, budget=RateBudget(), cite_cache=cite_cache
+        )
     else:
         print(
             "WARNING: no LRG_COURTLISTENER_TOKEN; no slot can reach VERIFIED, so the "
