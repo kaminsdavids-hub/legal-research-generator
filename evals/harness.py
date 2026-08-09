@@ -375,28 +375,35 @@ class QuestionResult:
     holdout: bool
     gates: list[GateResult]
     verdict: JudgeVerdict
+    #: Set when the question could not be run at all (timeout, transport error).
+    #: Distinct from a gate failure: nothing was measured, so nothing is known.
+    error: str = ""
 
     @property
     def gates_passed(self) -> bool:
-        return all(g.passed for g in self.gates)
+        return bool(self.gates) and all(g.passed for g in self.gates)
 
     @property
     def scored(self) -> bool:
-        """False when the judge produced nothing usable and the gates passed.
+        """False when nothing usable came back and the gates did not fail.
 
         That combination is *missing data*, not a zero: nothing is known about
         the response's quality. Only a gate failure is a real zero.
         """
+        if self.error:
+            return False
         return self.gates_passed is False or self.verdict.parsed
 
     @property
     def score(self) -> float | None:
-        """0 for a failed hard gate, ``None`` when the judge failed to answer.
+        """0 for a failed hard gate, ``None`` when nothing was measured.
 
-        Collapsing a broken judge to 0.0 silently reports it as a terrible
-        response. On the first full run that single conflation moved cluster D
-        from 7.30 to 5.84 and turned the best-performing cluster into the worst.
+        Collapsing a broken judge or a crashed question to 0.0 silently reports
+        it as a terrible response. On the first full run that conflation moved
+        cluster D from 7.30 to 5.84 and turned the best cluster into the worst.
         """
+        if self.error:
+            return None
         if not self.gates_passed:
             return 0.0
         if not self.verdict.parsed:
@@ -409,6 +416,7 @@ class QuestionResult:
             "cluster": self.cluster,
             "holdout": self.holdout,
             "scored": self.scored,
+            "error": self.error,
             "gates": {
                 "pass": self.gates_passed,
                 "detail": {g.id: {"pass": g.passed, "detail": g.detail} for g in self.gates},
@@ -447,8 +455,12 @@ class RunReport:
         return [r.id for r in self.results if not r.gates_passed]
 
     def unscored(self) -> list[str]:
-        """Questions whose judge produced nothing usable: missing, not zero."""
+        """Questions with no usable score: missing data, never a zero."""
         return [r.id for r in self.results if r.score is None]
+
+    def errors(self) -> dict[str, str]:
+        """Questions that could not be run at all, with the reason."""
+        return {r.id: r.error for r in self.results if r.error}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -459,6 +471,7 @@ class RunReport:
             "cluster_means": self.cluster_means(),
             "gate_failures": self.gate_failures(),
             "unscored_judge_failed": self.unscored(),
+            "run_errors": self.errors(),
             "questions": [r.to_dict() for r in self.results],
         }
 

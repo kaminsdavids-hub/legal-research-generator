@@ -467,3 +467,39 @@ def test_gate_failure_still_counts_as_zero_in_the_mean() -> None:
     ]
     assert report.overall_mean == pytest.approx(4.0)
     assert report.unscored() == []
+
+
+def test_a_crashed_question_is_unmeasured_not_a_zero() -> None:
+    """One slow call must not be scored as a worthless response.
+
+    A timeout previously killed the whole run and discarded 4.4 hours of
+    completed work; questions are now isolated, and a dead one is missing data.
+    """
+    from evals.harness import JudgeVerdict
+
+    crashed = QuestionResult(
+        id="D1", cluster="D", holdout=False, gates=[],
+        verdict=JudgeVerdict({}, "", parsed=False),
+        error="ReadTimeout: timed out",
+    )
+    assert crashed.score is None
+    assert crashed.scored is False
+    assert crashed.to_dict()["error"] == "ReadTimeout: timed out"
+
+    report = RunReport(eval_set="x")
+    report.results = [crashed, _result(True, _judge_json(**dict.fromkeys(CRITERIA, 8)), "D", "D2")]
+    # The crashed question must not drag 8.0 down to 4.0.
+    assert report.overall_mean == pytest.approx(8.0)
+    assert report.errors() == {"D1": "ReadTimeout: timed out"}
+    assert report.to_dict()["run_errors"] == {"D1": "ReadTimeout: timed out"}
+
+
+def test_empty_gate_list_is_not_treated_as_all_gates_passing() -> None:
+    """all([]) is True, which would have made a crashed question 'pass'."""
+    from evals.harness import JudgeVerdict
+
+    crashed = QuestionResult(
+        id="X", cluster="A", holdout=False, gates=[],
+        verdict=JudgeVerdict({}, "", parsed=False), error="boom",
+    )
+    assert crashed.gates_passed is False

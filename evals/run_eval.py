@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from evals.harness import (  # noqa: E402
     EvalSet,
+    JudgeVerdict,
     LoggingRetriever,
     QuestionResult,
     RunReport,
@@ -69,7 +70,13 @@ def main() -> int:
     parser.add_argument("--eval-set", default=str(ROOT / "evals/openweights_first_amendment.json"))
     parser.add_argument("--corpus", default="data/corpus/sample_corpus.jsonl")
     parser.add_argument("--base-url", default="http://127.0.0.1:11434/v1")
-    parser.add_argument("--timeout", type=float, default=300.0)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=900.0,
+        help="per-call timeout. Ollama swaps models between the five roles and a "
+        "cold load alone costs ~40s, so 300s is not enough headroom.",
+    )
     parser.add_argument("--thesis", default="saul:7b-instruct-v1")
     parser.add_argument("--antithesis", default="llama3.1:8b")
     parser.add_argument("--synthesis", default="gemma3:4b")
@@ -167,35 +174,55 @@ def main() -> int:
     report = RunReport(eval_set=eval_set.name)
     started = time.time()
 
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
+    out_path = out_dir / f"{eval_set.name}-{stamp}.json"
+
     for i, question in enumerate(questions, start=1):
         retriever.reset()
         print(f"[{i}/{len(questions)}] {question.id} ({question.cluster})", flush=True)
-        turn = chat.chat(question.prompt())
-        gates = [
-            gate_citation_integrity(turn, retriever.retrieved_cites, corpus_verified),
-            gate_temporal_validity(turn, status_by_cite),
-        ]
-        verdict = judge_response(judge, question, turn)
-        result = QuestionResult(
-            id=question.id,
-            cluster=question.cluster,
-            holdout=question.holdout,
-            gates=gates,
-            verdict=verdict,
-        )
+        # One slow call must not discard hours of completed work. A question that
+        # fails is recorded as unmeasured and the run continues.
+        try:
+            turn = chat.chat(question.prompt())
+            gates = [
+                gate_citation_integrity(turn, retriever.retrieved_cites, corpus_verified),
+                gate_temporal_validity(turn, status_by_cite),
+            ]
+            verdict = judge_response(judge, question, turn)
+            result = QuestionResult(
+                id=question.id,
+                cluster=question.cluster,
+                holdout=question.holdout,
+                gates=gates,
+                verdict=verdict,
+            )
+            cruxes = len(turn.cruxes)
+        except Exception as exc:  # noqa: BLE001 - a dead question is data, not a crash
+            result = QuestionResult(
+                id=question.id,
+                cluster=question.cluster,
+                holdout=question.holdout,
+                gates=[],
+                verdict=JudgeVerdict({}, "", parsed=False),
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            cruxes = 0
         report.results.append(result)
-        if not result.gates_passed:
+        # Checkpoint after every question: a crash at question 30 previously lost
+        # everything, including 4.4 hours of completed work.
+        out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        if result.error:
+            flag, shown = "RUN ERROR", "unmeasured"
+        elif not result.gates_passed:
             flag, shown = "GATE FAIL", "0.00"
         elif result.score is None:
             flag, shown = "JUDGE FAILED", "unscored"
         else:
             flag, shown = "PASS", f"{result.score:.2f}"
-        print(f"     {flag}  mean={shown}  cruxes={len(turn.cruxes)}", flush=True)
+        print(f"     {flag}  mean={shown}  cruxes={cruxes}", flush=True)
 
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
-    out_path = out_dir / f"{eval_set.name}-{stamp}.json"
     out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
 
     print("\n" + "=" * 70)
@@ -204,6 +231,8 @@ def main() -> int:
     print(f"per cluster  : {report.cluster_means()}")
     print(f"gate failures: {report.gate_failures() or 'none'}")
     print(f"judge failed : {report.unscored() or 'none'}  (excluded from the mean, not scored 0)")
+    if report.errors():
+        print(f"run errors   : {report.errors()}")
     print(f"written      : {out_path}")
 
     history = sorted(out_dir.glob(f"{eval_set.name}-*.json"))
