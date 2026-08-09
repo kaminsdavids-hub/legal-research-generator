@@ -7,6 +7,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+#: Marker written into a slot's note when its authority is no longer operative.
+#: Shared between the producer (the corpus adapter) and the renderer, so a
+#: rescinded rule cannot render as clean authority just because it verified.
+NOT_OPERATIVE = "NOT CURRENTLY OPERATIVE"
+
 
 class Weight(StrEnum):
     """Weight of authority attached to a proposition's citation slot.

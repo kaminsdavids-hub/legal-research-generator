@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .engine import DialecticChat
+from .models import NOT_OPERATIVE
 from .verification import CourtListenerClient, RateBudget
 
 
@@ -99,7 +100,7 @@ class _CorpusCiteRetriever:
             value = getattr(status, "value", str(status or ""))
             if value and value != "in_force":
                 note = str(getattr(record, "status_note", "") or "").strip()
-                return f"NOT CURRENTLY OPERATIVE ({value}): {note}" if note else f"NOT CURRENTLY OPERATIVE ({value})"
+                return f"{NOT_OPERATIVE} ({value}): {note}" if note else f"{NOT_OPERATIVE} ({value})"
             return ""
         return ""
 

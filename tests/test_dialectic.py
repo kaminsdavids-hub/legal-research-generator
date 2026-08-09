@@ -1660,3 +1660,66 @@ def test_stub_retriever_prefers_the_more_specific_hint() -> None:
     assert retriever.propose("digital privacy in the home", "P.") == ["2 A.2d 2"]
     assert retriever.propose("privacy generally", "P.") == ["1 A.2d 1"]
     assert retriever.propose("unrelated", "P.") == []
+
+
+def test_non_operative_status_survives_verification_and_reaches_the_synthesis() -> None:
+    """`verify_position` rewrites `slot.note` on every branch.
+
+    Annotating during retrieval meant the status was overwritten before the
+    synthesis — the only role running after retrieval — could act on it, so the
+    temporal gate failed on a response the module had no way to get right.
+    """
+    captured: list[str] = []
+
+    class _RecordingSynthesis:
+        name = "gemma3"
+
+        def chat(self, messages: list[Any], config: Any | None = None) -> str:
+            captured.append(messages[1]["content"])
+            return "The framework is no longer operative."
+
+    class _AnnotatingRetriever:
+        def propose(self, court_hint: str, proposition: str) -> list[str]:
+            return ["90 Fed. Reg. 4544"]
+
+        def annotate(self, cite: str) -> str:
+            return "NOT CURRENTLY OPERATIVE (rescinded): repealed May 2025"
+
+    http = _FakeHTTP(
+        status_code=200,
+        payload=[{
+            "citation": "90 Fed. Reg. 4544",
+            "normalized_citations": ["90 Fed. Reg. 4544"],
+            "status": 200,
+            "clusters": [{"id": 1}],
+        }],
+    )
+    chat = DialecticChat(
+        thesis_client=_FakeLLM("hermes3", _slot_json("The rule controls.", "hint", Weight.CONTROLLING)),
+        antithesis_client=_FakeLLM("llama3.1", _slot_json("Sovereign immunity bars it.", "hint", Weight.CONTROLLING)),
+        synthesis_client=_RecordingSynthesis(),
+        courtlistener=CourtListenerClient(token="t", http=http),
+        retriever=_AnnotatingRetriever(),
+    )
+    turn = chat.chat("Does the rule control?")
+
+    slot = turn.thesis.propositions[0]
+    # Verified by CourtListener, yet the status survived the note rewrite.
+    assert slot.status == SlotStatus.VERIFIED
+    assert "NOT CURRENTLY OPERATIVE" in slot.note
+    # And the synthesis was actually shown it.
+    assert "NOT CURRENTLY OPERATIVE" in captured[0]
+    assert "NOT CURRENTLY OPERATIVE" in copy_exchange(turn)
+
+
+def test_annotation_is_skipped_when_the_retriever_cannot_supply_one() -> None:
+    """Most retrievers have no notion of good-law status and must still work."""
+    chat = DialecticChat(
+        thesis_client=_FakeLLM("hermes3", _slot_json("T.", "stop and frisk", Weight.CONTROLLING)),
+        antithesis_client=_FakeLLM("llama3.1", _slot_json("A.", "hint", Weight.CONTROLLING)),
+        synthesis_client=_FakeLLM("gemma3", "Synthesis."),
+        retriever=StubCiteRetriever({"stop and frisk": ["392 U.S. 1"]}),
+    )
+    turn = chat.chat("Q?")
+    assert turn.thesis.propositions[0].normalized_cite == "392 U.S. 1"
+    assert "NOT CURRENTLY OPERATIVE" not in turn.thesis.propositions[0].note

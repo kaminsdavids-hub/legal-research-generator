@@ -504,21 +504,12 @@ class DialecticChat:
                     )
                 )
                 continue
-            cite = candidates[0]
-            note = "candidate proposed by retrieval; awaiting verification"
-            # An authority that is no longer operative must be flagged here, or
-            # a rescinded rule reaches the reader looking like current law. This
-            # also puts the status in front of the synthesis role, which is the
-            # only role that runs after retrieval.
-            status_note = self._annotate(cite)
-            if status_note:
-                note = f"{note}; {status_note}"
             proposed.append(
                 slot.model_copy(
                     update={
-                        "normalized_cite": cite,
+                        "normalized_cite": candidates[0],
                         "status": SlotStatus.PROPOSED,
-                        "note": note,
+                        "note": "candidate proposed by retrieval; awaiting verification",
                     }
                 )
             )
@@ -533,6 +524,28 @@ class DialecticChat:
             return str(annotate(cite) or "")
         except Exception:  # noqa: BLE001 - annotation must not void a turn
             return ""
+
+    def _annotate_position(self, position: Position) -> Position:
+        """Flag any slot resting on authority that is no longer operative.
+
+        This runs AFTER verification, not during retrieval, because
+        ``verify_position`` rewrites ``slot.note`` on every branch — annotating
+        earlier meant the status was silently overwritten before the synthesis
+        could ever see it, which is exactly what happened on the first attempt
+        at this fix.
+        """
+        annotated = []
+        for slot in position.propositions:
+            note = self._annotate(slot.normalized_cite) if slot.normalized_cite else ""
+            if note:
+                annotated.append(
+                    slot.model_copy(
+                        update={"note": f"{slot.note}; {note}" if slot.note else note}
+                    )
+                )
+            else:
+                annotated.append(slot)
+        return position.model_copy(update={"propositions": annotated})
 
     _NO_RETRIEVAL_NOTE = (
         "unverified by construction: no retrieval stage configured, so no "
@@ -590,8 +603,14 @@ class DialecticChat:
         thesis = self._retrieve_position(thesis)
         antithesis = self._retrieve_position(antithesis)
 
-        thesis = self._note_unretrieved(self._verify_position(thesis, ledger))
-        antithesis = self._note_unretrieved(self._verify_position(antithesis, ledger))
+        # Annotate last: verification rewrites `note`, so a status attached any
+        # earlier is overwritten before the synthesis can act on it.
+        thesis = self._annotate_position(
+            self._note_unretrieved(self._verify_position(thesis, ledger))
+        )
+        antithesis = self._annotate_position(
+            self._note_unretrieved(self._verify_position(antithesis, ledger))
+        )
 
         turn = DialecticTurn(
             question=question,

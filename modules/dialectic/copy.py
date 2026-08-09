@@ -6,7 +6,7 @@ paste unverified authority into a filing without seeing the flag.
 
 from __future__ import annotations
 
-from .models import CitationSlot, Crux, DialecticTurn, Position, SlotStatus
+from .models import NOT_OPERATIVE, CitationSlot, Crux, DialecticTurn, Position, SlotStatus
 
 
 def _slot_marker(slot: CitationSlot) -> str:
@@ -20,6 +20,12 @@ def _slot_marker(slot: CitationSlot) -> str:
     """
     if slot.status == SlotStatus.VERIFIED:
         if slot.normalized_cite:
+            # Verified says the citation resolves, not that the authority is
+            # still good law. A rescinded rule that verifies would otherwise
+            # render as clean authority — the most dangerous output here.
+            if NOT_OPERATIVE in slot.note:
+                status = NOT_OPERATIVE + slot.note.split(NOT_OPERATIVE, 1)[1]
+                return f" [{slot.normalized_cite} — {status}]"
             return f" [{slot.normalized_cite}]"
         # Verified but no cite: nothing to paste, so never render clean.
         return (
