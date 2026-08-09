@@ -105,6 +105,19 @@ class LoggingRetriever:
         self._inner = inner
         self.log: list[dict[str, Any]] = []
 
+    def annotate(self, cite: str) -> str:
+        """Forward the optional annotator capability to the wrapped retriever.
+
+        A decorator that silently drops an optional capability is worse than one
+        that never had it: the engine probes with ``getattr(retriever,
+        "annotate", None)``, so wrapping turned annotation off and every
+        non-operative authority reached the synthesis unflagged. That is how the
+        temporal gate failed three runs in a row while the module itself was
+        correct.
+        """
+        inner = getattr(self._inner, "annotate", None)
+        return str(inner(cite) or "") if callable(inner) else ""
+
     def propose(self, court_hint: str, proposition: str) -> list[str]:
         candidates = self._inner.propose(court_hint, proposition)
         self.log.append(

@@ -377,3 +377,33 @@ def test_corpus_verification_does_not_excuse_a_fabricated_cite() -> None:
     result = gate_citation_integrity(turn, set(), corpus_verified={"15 C.F.R. 734.7"})
     assert not result.passed
     assert "not in the retrieval log" in result.detail
+
+
+def test_logging_retriever_forwards_the_annotator_capability() -> None:
+    """A wrapper that drops an optional capability silently turns it off.
+
+    The engine probes with getattr(retriever, "annotate", None). When the log
+    wrapper did not forward it, every non-operative authority reached the
+    synthesis unflagged and the temporal gate failed runs the module was
+    getting right.
+    """
+    class _Annotating:
+        def propose(self, court_hint: str, proposition: str) -> list[str]:
+            return ["90 Fed. Reg. 4544"]
+
+        def annotate(self, cite: str) -> str:
+            return "NOT CURRENTLY OPERATIVE (rescinded)" if "Fed. Reg." in cite else ""
+
+    r = LoggingRetriever(_Annotating())
+    assert r.annotate("90 Fed. Reg. 4544") == "NOT CURRENTLY OPERATIVE (rescinded)"
+    assert r.annotate("392 U.S. 1") == ""
+    # And the engine's own probe must find it through the wrapper.
+    assert callable(getattr(r, "annotate", None))
+
+
+def test_logging_retriever_tolerates_a_retriever_without_annotate() -> None:
+    class _Plain:
+        def propose(self, court_hint: str, proposition: str) -> list[str]:
+            return []
+
+    assert LoggingRetriever(_Plain()).annotate("392 U.S. 1") == ""

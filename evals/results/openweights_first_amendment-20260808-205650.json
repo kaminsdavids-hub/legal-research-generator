@@ -1,0 +1,82 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 4.1,
+  "cluster_means": {
+    "A": 4.1
+  },
+  "gate_failures": [
+    "A1"
+  ],
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": false,
+            "detail": "90 Fed. Reg. 4544 is rescinded but no model-authored text says so"
+          }
+        }
+      },
+      "scores": [
+        9,
+        8,
+        9,
+        9,
+        9
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The thesis and antithesis both engage the relevant doctrinal anchors and present a clear and coherent argument. The thesis presents a stronger case overall, with more persuasive authority cited in support of its arguments. However, the antithesis does not cite any controlling authority for its assertion that trained model weights are functional artifacts, not speech, which weakens its position. The crux table shows that the thesis wins on two outcome-bearing issues and one non-outcome bearing issue, while the antithesis wins on none. The synthesis is clear and well-reasoned, with a citation string that would have been accepted if not for the presence of an unsupported assertion in the antithesis. Overall, the thesis presents a stronger argument and deserves a score of 9."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        8,
+        9,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 8.2,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively anticipates and addresses counterarguments, identifies the crux of the issue, and demonstrates synthesis discipline by presenting a well-reasoned argument that follows from the weighing of authorities. The response scores high on steelmanning because it presents a strong thesis while acknowledging the antithesis's arguments and addressing them in detail."
+    }
+  ]
+}

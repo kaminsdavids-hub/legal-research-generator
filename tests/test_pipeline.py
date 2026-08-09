@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from legal_research.models import CiteStatus
 from legal_research.pipeline import LegalResearchPipeline
 
@@ -36,6 +38,15 @@ def test_final_prose_has_no_raw_cite_tokens(pipeline: LegalResearchPipeline) -> 
     assert "[^" in bb.outline[0].content
 
 
+def test_counterargument_section_is_scaffolded(pipeline: LegalResearchPipeline) -> None:
+    bb = pipeline.run_all(RAW_IDEA).blackboard
+    section = next((s for s in bb.outline if s.title == "Counterargument and Rebuttal"), None)
+    assert section is not None
+    assert section.content
+    assert "counterargument." in section.content.lower()
+    assert "rebuttal." in section.content.lower()
+
+
 def test_novelty_is_grounded_in_retrieved_literature(pipeline: LegalResearchPipeline) -> None:
     bb = pipeline.run_all(RAW_IDEA).blackboard
     assert bb.novelty is not None
@@ -50,3 +61,10 @@ def test_document_has_table_of_authorities(pipeline: LegalResearchPipeline) -> N
     assert any(doc.table_of_authorities.values())
     # Verification report is embedded as an appendix.
     assert "Citation Verification Report" in doc.verification_report_md
+
+
+def test_long_form_manuscript_hits_configured_word_range(pipeline: LegalResearchPipeline) -> None:
+    bb = pipeline.run_all(RAW_IDEA).blackboard
+    words = sum(len(re.findall(r"[A-Za-z0-9']+", section.content)) for section in bb.outline)
+    assert words >= pipeline.settings.manuscript_target_min_words
+    assert words <= pipeline.settings.manuscript_target_max_words
