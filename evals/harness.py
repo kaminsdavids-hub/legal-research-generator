@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from modules.dialectic.copy import copy_crux_table, copy_exchange
+from modules.dialectic.copy import copy_position
 from modules.dialectic.models import DialecticTurn, SlotStatus
 
 # --------------------------------------------------------------------------- #
@@ -315,27 +315,88 @@ class JudgeVerdict:
         return statistics.fmean(self.scores.values()) if self.scores else 0.0
 
 
-def judge_response(
-    client: JudgeClient, question: EvalQuestion, turn: DialecticTurn
-) -> JudgeVerdict:
-    """Score one response. A judge that will not parse yields zeros, not guesses."""
-    rendered = (
+_JUDGE_RETRY = (
+    "\n\nYour previous reply was REJECTED: it did not contain the required JSON "
+    "object. Do not describe, transcribe, or restructure the response above. "
+    "Emit only:\n"
+    '{"scores": {"steelmanning": N, "authority_hierarchy": N, '
+    '"counterargument_anticipation": N, "crux_identification": N, '
+    '"synthesis_discipline": N}, "rationale": "..."}'
+)
+
+
+def render_for_judge(question: EvalQuestion, turn: DialecticTurn) -> str:
+    """Render a turn for scoring, without inviting the judge to copy its shape.
+
+    `copy_exchange` is written for a human reader: it numbers each crux and
+    renders it as ``7. resolvable by authority (winner: antithesis; nli: model)``,
+    which is close enough to JSON that a judge asked for JSON transcribes it
+    instead of scoring. Question D1, whose seven cruxes make the largest table in
+    the set, failed identically in three consecutive runs by echoing exactly
+    those field names back.
+
+    So the crux table is given as prose here, it appears once rather than twice
+    (`copy_exchange` already contains it, and it was being appended again), and
+    the ledger trailers are dropped — call counts have no bearing on the score.
+    """
+    cruxes = "no direct contradiction was identified between the two positions"
+    if turn.cruxes:
+        lines = []
+        for crux in turn.cruxes:
+            rank = "outcome-bearing" if crux.outcome_bearing else "not outcome-bearing"
+            winner = "neither side outranks" if crux.winner == "none" else f"favours the {crux.winner}"
+            lines.append(
+                f"  Thesis argues {crux.thesis_prop.proposition!r} while the antithesis "
+                f"argues {crux.antithesis_prop.proposition!r}. This is {crux.partition}, "
+                f"{winner}, and is {rank}."
+            )
+        cruxes = f"{len(turn.cruxes)} contradiction(s) were identified:\n" + "\n".join(lines)
+
+    return (
         f"QUESTION: {question.prompt()}\n\n"
-        f"DOCTRINAL ANCHORS A COMPETENT ANSWER SHOULD ENGAGE:\n"
+        "DOCTRINAL ANCHORS A COMPETENT ANSWER SHOULD ENGAGE:\n"
         + "\n".join(f"  - {m}" for m in question.must_engage)
-        + f"\n\nRESPONSE:\n{copy_exchange(turn)}\n\n{copy_crux_table(turn)}"
+        + f"\n\nTHESIS:\n{copy_position(turn, 'thesis')}"
+        + f"\n\nANTITHESIS:\n{copy_position(turn, 'antithesis')}"
+        + f"\n\nSYNTHESIS:\n{turn.synthesis}"
+        + f"\n\nCRUXES: {cruxes}"
     )
-    try:
-        raw = client.chat(
-            [
-                {"role": "system", "content": _JUDGE_PROMPT},
-                {"role": "user", "content": rendered},
-            ],
-            config={"temperature": 0.0, "seed": 7},
-        )
-    except Exception as exc:  # noqa: BLE001 - a broken judge is a result, not a crash
-        return JudgeVerdict({}, f"judge call failed: {exc}", parsed=False)
-    return parse_verdict(raw)
+
+
+def judge_response(
+    client: JudgeClient,
+    question: EvalQuestion,
+    turn: DialecticTurn,
+    *,
+    retries: int = 2,
+) -> JudgeVerdict:
+    """Score one response, retrying with a correction when the reply will not parse.
+
+    The debaters already get a retry when their output is rejected; the judge
+    got one shot, so a single malformed reply discarded the question entirely.
+    """
+    rendered = render_for_judge(question, turn)
+    last = JudgeVerdict({}, "judge was never called", parsed=False)
+
+    for attempt in range(max(1, retries)):
+        content = rendered if attempt == 0 else rendered + _JUDGE_RETRY
+        try:
+            raw = client.chat(
+                [
+                    {"role": "system", "content": _JUDGE_PROMPT},
+                    {"role": "user", "content": content},
+                ],
+                # Re-roll rather than re-run: at temperature 0 a rejected reply
+                # reproduces verbatim, which is how D1 failed three times.
+                config={"temperature": 0.0 if attempt == 0 else 0.5, "seed": 7 + attempt},
+            )
+        except Exception as exc:  # noqa: BLE001 - a broken judge is a result, not a crash
+            last = JudgeVerdict({}, f"judge call failed: {exc}", parsed=False)
+            continue
+        last = parse_verdict(raw)
+        if last.parsed:
+            return last
+    return last
 
 
 def parse_verdict(raw: str) -> JudgeVerdict:

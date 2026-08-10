@@ -282,7 +282,7 @@ def test_judge_sees_the_anchors_and_the_rendered_exchange() -> None:
     seen: list[str] = []
 
     class _Recording:
-        name = "saul"
+        name = "hermes3"
 
         def chat(self, messages: list[Any], config: Any | None = None) -> str:
             seen.append(messages[1]["content"])
@@ -293,7 +293,10 @@ def test_judge_sees_the_anchors_and_the_rendered_exchange() -> None:
     judge_response(_Recording(), a1, _turn(CitationSlot(proposition="Weights are speech.")))
     assert "Bernstein v. DOJ" in seen[0]
     assert "Weights are speech." in seen[0]
-    assert "CRUX TABLE" in seen[0]
+    assert "CRUXES:" in seen[0]
+    # [UNSUPPORTED] markers must survive into the judge's view: an unverified
+    # authority is exactly what authority_hierarchy is meant to penalise.
+    assert "[UNSUPPORTED" in seen[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -503,3 +506,70 @@ def test_empty_gate_list_is_not_treated_as_all_gates_passing() -> None:
         verdict=JudgeVerdict({}, "", parsed=False), error="boom",
     )
     assert crashed.gates_passed is False
+
+
+def _crux_turn(n: int) -> DialecticTurn:
+    from modules.dialectic.models import Crux
+    turn = _turn(CitationSlot(proposition="Thesis point.", weight=Weight.CONTROLLING))
+    turn.cruxes = [
+        Crux(
+            thesis_prop=CitationSlot(proposition=f"T{i}", weight=Weight.CONTROLLING),
+            antithesis_prop=CitationSlot(proposition=f"A{i}", weight=Weight.CONTROLLING),
+            negates=True, partition="open", winner="none",
+            outcome_bearing=False, nli_source="model",
+        )
+        for i in range(n)
+    ]
+    return turn
+
+
+def test_judge_input_does_not_hand_the_judge_a_json_shaped_crux_table() -> None:
+    """D1's seven cruxes made the judge transcribe the table instead of scoring.
+
+    Its reply echoed exactly the field names the human-facing renderer emits.
+    """
+    es = EvalSet.load(EVAL_SET_PATH)
+    from evals.harness import render_for_judge
+
+    text = render_for_judge(es.questions[0], _crux_turn(7))
+    assert "7 contradiction(s) were identified" in text
+    # None of the key-value shapes the judge previously copied back.
+    assert "nli:" not in text
+    assert "(winner:" not in text
+    assert "outcome-bearing;" not in text
+    assert "Verification calls spent" not in text
+    # The crux content is present exactly once, not twice.
+    assert text.count("T0") == 1
+
+
+def test_judge_retries_with_a_correction_when_the_reply_will_not_parse() -> None:
+    seen: list[str] = []
+
+    class _BadThenGood:
+        name = "hermes3"
+
+        def chat(self, messages: list[Any], config: Any | None = None) -> str:
+            seen.append(messages[1]["content"])
+            if len(seen) == 1:
+                return '{"7":{"outcome-bearing":"no","winner":"antithesis"}}'
+            return _judge_json(**dict.fromkeys(CRITERIA, 7))
+
+    es = EvalSet.load(EVAL_SET_PATH)
+    v = judge_response(_BadThenGood(), es.questions[0], _crux_turn(7))
+    assert v.parsed
+    assert v.mean == 7.0
+    assert len(seen) == 2
+    assert "REJECTED" in seen[1], "the retry must tell the judge what went wrong"
+
+
+def test_judge_gives_up_cleanly_after_its_retries() -> None:
+    class _AlwaysBad:
+        name = "hermes3"
+
+        def chat(self, messages: list[Any], config: Any | None = None) -> str:
+            return "not json"
+
+    es = EvalSet.load(EVAL_SET_PATH)
+    v = judge_response(_AlwaysBad(), es.questions[0], _crux_turn(2))
+    assert not v.parsed
+    assert v.mean == 0.0

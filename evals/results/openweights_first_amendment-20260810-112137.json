@@ -1,0 +1,236 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 6.0,
+  "scored_count": 6,
+  "total_count": 6,
+  "cluster_means": {
+    "A": 6.0
+  },
+  "gate_failures": [],
+  "unscored_judge_failed": [],
+  "run_errors": {},
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        6,
+        5,
+        8,
+        4
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages the key doctrinal anchors and argues both sides of the issue. It identifies a potential crux question but does not fully resolve it with synthesis discipline. The authority hierarchy is somewhat murky as California privacy law vs federal trade secrets law are pitted against First Amendment precedents."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis argument, making it more formidable than its initial framing. It anticipates and engages with key counterarguments, though some remain underdeveloped. The crux is clearly identified and synthesized into a coherent analysis. The synthesis maintains an even-handed approach but leans slightly towards the thesis conclusion."
+    },
+    {
+      "id": "A3",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "2 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "..."
+    },
+    {
+      "id": "A5",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        5,
+        4,
+        7,
+        6
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 5.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in steelmanning by considering the antithesis's arguments and how they could potentially counter the thesis. It identifies key crux issues around the interpretation of 'function' and causation. The synthesis is somewhat disciplined in that it acknowledges the likely outcome based on current precedent, but does not fully explain why this conclusion follows from weighing the authorities. There are some unsupported assertions, particularly regarding controlling authority."
+    },
+    {
+      "id": "A6",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "5 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        4,
+        2,
+        3,
+        5,
+        4
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 3.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage with both sides of the argument, but relies heavily on unsupported assertions and a rescinded regulatory framework. The synthesis acknowledges the lack of clear authority on the key question, but does not fully integrate or discipline the arguments into a coherent conclusion."
+    },
+    {
+      "id": "A7",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        8,
+        5,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response identifies key issues like standing and vagueness. It correctly points out the plaintiff's facial challenge is unlikely to succeed due to lack of injury. But it doesn't fully engage the core question of whether compute threshold is content-neutral line or proxy for speech. The synthesis overemphasizes standing issue vs. content-neutrality analysis needed."
+    }
+  ]
+}
