@@ -244,6 +244,8 @@ class CourtListenerClient:
         cache: ContentCache | None = None,
         http: httpx.Client | None = None,
         cite_cache: PersistentCiteCache | None = None,
+        max_retries: int = 3,
+        retry_backoff: float = 1.0,
     ) -> None:
         self.token = token
         self.base_url = base_url.rstrip("/")
@@ -253,6 +255,10 @@ class CourtListenerClient:
         #: Optional cross-process cache. Without it every run re-verifies the
         #: same authorities and burns the daily quota again.
         self.cite_cache = cite_cache
+        #: Attempts for a transient failure (timeout, transport error, 5xx).
+        #: Each retry spends budget, because it is a real request.
+        self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
 
     def lookup(
         self,
@@ -277,35 +283,62 @@ class CourtListenerClient:
                     ledger.cache_hits += 1
                 return {"results": hit}
 
-        self.budget.check()
+        # Transient failures are retried. A single timeout or 5xx previously
+        # marked every citation in the block NOT_FOUND, which renders to the
+        # reader as [UNSUPPORTED] — a network blip presented as "this authority
+        # could not be confirmed". In the eval it cost whole questions: B7 lost
+        # five valid citations to one failed call and scored 0, and gate flips
+        # of that kind produced essentially all the run-to-run variance.
+        #
+        # 401 and 429 are NOT retried. Bad credentials will not fix themselves,
+        # and hammering an endpoint that has already refused for quota is how a
+        # daily limit turns into a longer block.
+        data: Any = None
+        last_error = "no attempt made"
+        for attempt in range(max(1, self.max_retries)):
+            if attempt:
+                time.sleep(self.retry_backoff * (2 ** (attempt - 1)))
+            self.budget.check()
+            try:
+                resp = self.http.post(
+                    f"{self.base_url}/citation-lookup/",
+                    headers={"Authorization": f"Token {self.token}"},
+                    data={"text": text_block},
+                    timeout=30.0,
+                )
+            except httpx.TimeoutException:
+                last_error = "timeout"
+                _LOG.info("citation-lookup timeout (attempt %d)", attempt + 1)
+                continue
+            except httpx.RequestError as exc:
+                last_error = f"request_error: {exc}"
+                _LOG.info("citation-lookup transport error (attempt %d): %s", attempt + 1, exc)
+                continue
 
-        try:
-            resp = self.http.post(
-                f"{self.base_url}/citation-lookup/",
-                headers={"Authorization": f"Token {self.token}"},
-                data={"text": text_block},
-                timeout=30.0,
+            if resp.status_code == 429:
+                return {"error": "rate_limited", "results": []}
+            if resp.status_code == 401:
+                return {"error": "unauthorized", "results": []}
+            if resp.status_code >= 500:
+                last_error = f"server_error:{resp.status_code}"
+                _LOG.info("citation-lookup %s (attempt %d)", last_error, attempt + 1)
+                continue
+
+            try:
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as exc:
+                return {"error": f"http_error:{exc.response.status_code}", "results": []}
+            except Exception as exc:  # noqa: BLE001
+                last_error = f"decode_error: {exc}"
+                _LOG.info("citation-lookup decode error (attempt %d): %s", attempt + 1, exc)
+                continue
+            break
+        else:
+            _LOG.warning(
+                "citation-lookup failed after %d attempt(s): %s", self.max_retries, last_error
             )
-        except httpx.TimeoutException:
-            result: dict[str, Any] = {"error": "timeout", "results": []}
-            return result
-        except httpx.RequestError as exc:
-            return {"error": f"request_error: {exc}", "results": []}
-
-        if resp.status_code == 429:
-            return {"error": "rate_limited", "results": []}
-        if resp.status_code >= 500:
-            return {"error": f"server_error:{resp.status_code}", "results": []}
-        if resp.status_code == 401:
-            return {"error": "unauthorized", "results": []}
-
-        try:
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPStatusError as exc:
-            return {"error": f"http_error:{exc.response.status_code}", "results": []}
-        except Exception as exc:  # noqa: BLE001
-            return {"error": f"decode_error: {exc}", "results": []}
+            return {"error": last_error, "results": []}
 
         self.budget.spend()
         self.cache.set(text_block, data)

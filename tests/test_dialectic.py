@@ -1869,3 +1869,70 @@ def test_corrupt_cache_file_does_not_crash_a_run(tmp_path: Path) -> None:
     path = tmp_path / "c.json"
     path.write_text("{not json at all")
     assert len(PersistentCiteCache(path)) == 0
+
+
+class _FlakyHTTP:
+    """Fails the first `fail_times` calls, then succeeds."""
+
+    def __init__(self, fail_times: int, payload, mode: str = "timeout") -> None:
+        self.fail_times = fail_times
+        self.payload = payload
+        self.mode = mode
+        self.calls = 0
+
+    def post(self, url: str, **kwargs: Any):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            if self.mode == "timeout":
+                raise httpx.TimeoutException("boom")
+            return _FakeResponse(503, [])
+        return _FakeResponse(200, self.payload)
+
+
+_OK_PAYLOAD = [{
+    "citation": "392 U.S. 1", "normalized_citations": ["392 U.S. 1"],
+    "status": 200, "clusters": [{"id": 1, "case_name": "Terry v. Ohio"}],
+}]
+
+
+@pytest.mark.parametrize("mode", ["timeout", "server_error"])
+def test_transient_verification_failure_is_retried(mode: str) -> None:
+    """One flaky call previously marked every citation in the block NOT_FOUND.
+
+    B7 lost five valid citations to a single failed lookup and scored 0; gate
+    flips of that kind produced essentially all the run-to-run variance.
+    """
+    http = _FlakyHTTP(fail_times=2, payload=_OK_PAYLOAD, mode=mode)
+    client = CourtListenerClient(token="t", http=http, retry_backoff=0.0)
+    out = client.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+    assert http.calls == 3
+    assert "error" not in out
+    assert out[0]["clusters"][0]["case_name"] == "Terry v. Ohio"
+
+
+def test_retries_are_bounded_and_report_the_last_error() -> None:
+    http = _FlakyHTTP(fail_times=99, payload=_OK_PAYLOAD)
+    client = CourtListenerClient(token="t", http=http, max_retries=3, retry_backoff=0.0)
+    out = client.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+    assert http.calls == 3
+    assert out["error"] == "timeout"
+
+
+def test_rate_limit_and_auth_failures_are_not_retried() -> None:
+    """Neither fixes itself, and retrying a quota refusal invites a longer block."""
+    for code, expected in ((429, "rate_limited"), (401, "unauthorized")):
+        http = _FakeHTTP(status_code=code, payload=[])
+        client = CourtListenerClient(token="t", http=http, retry_backoff=0.0)
+        out = client.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+        assert out["error"] == expected
+        assert len(http.calls) == 1, f"{code} must not be retried"
+
+
+def test_a_retried_success_is_still_cached(tmp_path: Path) -> None:
+    from modules.dialectic.verification import PersistentCiteCache
+
+    cache = PersistentCiteCache(tmp_path / "c.json")
+    http = _FlakyHTTP(fail_times=1, payload=_OK_PAYLOAD)
+    client = CourtListenerClient(token="t", http=http, cite_cache=cache, retry_backoff=0.0)
+    client.lookup("392 U.S. 1", cites=["392 U.S. 1"])
+    assert cache.get("392 U.S. 1") is not None

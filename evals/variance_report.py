@@ -58,10 +58,15 @@ def main() -> int:
     print(f"consecutive deltas: {[f'{d:.3f}' for d in deltas]}")
     worst = max(deltas) if deltas else 0.0
     print(f"largest consecutive delta: {worst:.3f}   plateau threshold: {args.plateau_delta}")
+    margin = args.plateau_delta - worst
     if worst >= args.plateau_delta:
         print("  -> NOISE EXCEEDS THE THRESHOLD. An unchanged system already moves more "
               "than the plateau rule tolerates, so the rule would fire on noise. Raise "
               "the threshold above the noise floor or average several runs per round.")
+    elif margin < 0.25 * args.plateau_delta:
+        print(f"  -> MARGIN IS THIN ({margin:.3f}). The observed maximum is close enough to "
+              "the threshold that one more unlucky run would cross it. Treat this as "
+              "'not yet established' rather than safe.")
     else:
         print("  -> noise floor is below the threshold; a change larger than it is signal.")
 
