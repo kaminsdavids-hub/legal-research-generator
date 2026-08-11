@@ -783,10 +783,16 @@ difference being the retries on two questions.
 ## 11. Building the eval harness (2026-08-08 / 09)
 
 A 40-question First Amendment eval set was supplied for the module. Standing it
-up surfaced eight further defects. They are recorded together because the
-pattern matters more than any one of them: **three would have shipped to users
+up surfaced nine further defects. They are recorded together because the
+pattern matters more than any one of them: **four would have shipped to users
 regardless of any eval, and four were in the eval machinery itself — where a
 bug does not break anything visibly, it just makes the numbers wrong.**
+
+A second pattern runs through the last three: each was a step assumed rather
+than tested. The judge was assumed to discriminate until it was calibrated; the
+cache was assumed to prevent calls until a mixed block was actually run through
+a client that refuses to make them. Both assumptions were cheap to check and
+expensive to leave unchecked.
 
 Question A1 failed five times in a row, for five different genuine reasons. At
 the third failure the intended report was "an 8B synthesis model will not act on
@@ -962,6 +968,36 @@ Fixing this exposed a latent bug: `gates_passed` used `all(self.gates)`, and
 `all([])` is `True`, so a crashed question with no gates would have reported as
 **passing both of them**.
 
+### 11.9a. Non-case authority was sent to a case-law API (user-facing)
+
+CourtListener indexes case law. A C.F.R. section, a U.S.C. section or a Federal
+Register page can never resolve there, and §11.4's corpus-verified path exists
+precisely because of that — but nothing stopped those citations being *sent*.
+
+Each wasted a request and returned NOT_FOUND on a perfectly correct citation.
+Worse, it poisoned the cache: `PersistentCiteCache` is all-or-nothing per block,
+deliberately, so a single unresolvable statute forced a live call for every case
+citation beside it. A cache holding all 34 case authorities still missed on any
+position that also cited a regulation — which is most of them.
+
+`is_case_citation` matches on the code rather than the shape, because
+"90 Fed. Reg. 4544" is volume-reporter-page shaped and would pass any structural
+test while being unresolvable. Non-case slots are now left exactly as retrieval
+left them rather than marked NOT_FOUND for lacking a record that never existed.
+
+**This cost three attempts at a variance estimate**, each exhausting the 125/day
+quota. The pattern in all three was the same and is the lesson worth keeping:
+the cache was confirmed complete at 34/34 and that was treated as equivalent to
+"the runs will make no calls". It was not, and the step between was never
+tested. The check that would have caught it — running a realistic mixed block
+through an HTTP client that raises on any call — takes seconds and is now a
+test.
+
+Also corrected here: CourtListener's 125/day is a **rolling window, not a daily
+reset**. Waiting for the `retry-after` header returns the handful of slots that
+aged out at that moment, not a refill, so "wait for the reset then run" is
+structurally unsound.
+
 ### 11.10. Quota: one full run per day
 
 The two repeat runs were also doomed for a second reason. CourtListener allows
@@ -982,34 +1018,60 @@ still hits. Repeat runs cost no quota. Only successful lookups are stored:
 caching a 429 would turn a transient outage into a permanent "this citation does
 not exist", indistinguishable from a fabricated cite.
 
-### 11.11. Results, and what they do not show
+### 11.11. Results and the measured noise floor
 
-One clean 32-question run: **6.729** over 31 scored, **zero gate failures**.
+Three consecutive runs, identical code, verification served entirely from cache
+so the API is removed as a variable:
 
-| cluster | mean | n |
-|---|---|---|
-| D — deemed exports, academic freedom | 7.30 | 4/5 |
-| C — receipt rights, Lamont | 7.20 | 6 |
-| F — tailoring, less-restrictive alternatives | 6.90 | 4 |
-| B — prior restraint, EAR exclusion | 6.80 | 6 |
-| E — national-security deference | 6.36 | 5 |
-| A — weights as speech | 6.00 | 6 |
+```
+means   6.925   6.838   6.831
+deltas  0.087   0.007
+range   0.094    stdev 0.052
+largest consecutive delta: 0.087   against a 0.2 plateau threshold
+```
 
-Evidence the scores track something real: questions that yielded cruxes score
-**8.19** on `crux_identification` against **6.80** for those that yielded none —
-a correlation with ground truth the judge was never shown.
+**The 0.2 threshold is safe, with a 2.3x margin.** A change larger than about
+0.09 is signal. This supersedes the earlier figure of 0.193, which was measured
+against a 0.2 threshold at a 0.007 margin and came almost entirely from gate
+flips that §11.9 and §11.9a have since removed.
 
-Against that: n=1 per question, so there is no variance estimate and cluster
-gaps of a few tenths on n=4–6 are not findings. `counterargument_anticipation`
-is the weakest criterion at 5.66, consistent with no role getting a second pass
-after seeing the other side. **The judge is calibrated, not validated**: it
-separates weak work from strong, which is not the same as agreeing with a
-lawyer's judgment. For a claim in a paper, grade a sample by hand and check the
-correlation.
+The retry and the non-case exclusion did what they were meant to. The two
+questions that produced nearly all the earlier variance are now stable, as is
+the question whose judge kept failing:
 
-Holdouts A4, A8, B4, C3, D3, E3, F3 and F6 have never been run. A mismatch
-between the per-question flags and the declared holdout list raises rather than
-leaking one into an optimization loop.
+```
+B6:  7.0, 7.0, 7.0      previously 5.6, 5.6, 5.6, 0.0
+B7:  7.4, 7.4, 7.4      previously 7.6, 0.0, 7.6, 7.6
+D1:  7.6, 7.6, 7.6      previously unscored in every run
+```
+
+Overall **6.86 ± 0.05**, 32/32 scored.
+
+| cluster | mean |
+|---|---|
+| C — receipt rights, Lamont | 7.47 |
+| F — tailoring, less-restrictive alternatives | 7.25 |
+| B — prior restraint, EAR exclusion | 6.87 |
+| E — national-security deference | 6.80 |
+| A — weights as speech | 6.33 |
+| D — deemed exports, academic freedom | 6.32 |
+
+**What this does not show.** 23 of 32 questions were identical across all three
+runs; the nine that moved are real generation drift, and that drift is what the
+0.087 measures. It is the floor for this configuration only: attempt 0 runs at
+temperature 0 with a fixed seed for both debaters and the synthesis, and the
+judge is also temperature 0. Raising any of those raises the floor.
+
+The judge remains **calibrated, not validated** (§11.7). It separates weak work
+from strong; it has not been shown to agree with a lawyer's judgment. For a
+claim in a paper, grade a sample by hand and check the correlation.
+
+Two open items. **D6 fails its citation gate reproducibly** in runs 2 and 3 —
+consistent rather than flipping, so a real defect rather than noise. And **A2 and
+D6 both shifted after run 1** (A2 4.2 -> 6.6 -> 6.6), which suggests a warmup
+effect that would make any single run's baseline slightly unrepresentative.
+
+Holdouts A4, A8, B4, C3, D3, E3, F3 and F6 remain unrun.
 
 ### 11.12. Environment constraints worth recording
 
