@@ -65,7 +65,7 @@ def _corpus_index(corpus_path: str) -> tuple[dict[str, tuple[str, str]], set[str
     return index, corpus_verified
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eval-set", default=str(ROOT / "evals/openweights_first_amendment.json"))
     parser.add_argument("--corpus", default="data/corpus/sample_corpus.jsonl")
@@ -95,11 +95,22 @@ def main() -> int:
     )
     parser.add_argument("--out", default=str(ROOT / "evals/results"))
     parser.add_argument(
+        "--round-id",
+        default="",
+        help="tag this run as part of a round. Runs sharing an id are averaged "
+        "before the plateau rule reads them, so one citation-gate flip cannot "
+        "move the figure the rule sees.",
+    )
+    parser.add_argument(
         "--cite-cache",
         default=str(ROOT / "evals/.cache/courtlistener.json"),
         help="persistent citation-lookup cache shared across runs",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     # The judge is a fifth role and gets the same family discipline.
     families = {

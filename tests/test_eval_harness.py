@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -636,3 +637,34 @@ def test_a_real_regression_still_registers_across_rounds() -> None:
     a, b = round_means(runs)
     assert abs(b - a) > ROUND_PLATEAU_DELTA
     assert not has_plateaued([a, b, 6.2, 6.2], delta=ROUND_PLATEAU_DELTA)
+
+
+def test_the_runner_cli_accepts_every_option_main_reads() -> None:
+    """The suite never invoked the CLI, so a broken runner passed all 98 tests.
+
+    A --round-id flag was added by a string replacement that silently matched
+    nothing, while main() went on reading args.round_id. Every invocation would
+    have raised AttributeError, and it was pushed.
+    """
+    import argparse
+    import inspect
+
+    from evals import run_eval
+
+    parser = run_eval.build_parser()
+    assert isinstance(parser, argparse.ArgumentParser)
+
+    # Defaults alone must produce a usable namespace.
+    args = parser.parse_args([])
+    source = inspect.getsource(run_eval.main)
+    for attr in sorted(set(re.findall(r"args\.([a-z_]+)", source))):
+        assert hasattr(args, attr), f"main() reads args.{attr}, which the parser never defines"
+
+
+def test_round_id_reaches_the_report() -> None:
+    from evals.run_eval import build_parser
+
+    assert build_parser().parse_args(["--round-id", "floor-A"]).round_id == "floor-A"
+    assert build_parser().parse_args([]).round_id == ""
+    report = RunReport(eval_set="x", round_id="floor-A")
+    assert report.to_dict()["round_id"] == "floor-A"
