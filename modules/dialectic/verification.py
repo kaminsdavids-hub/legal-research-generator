@@ -350,6 +350,30 @@ class CourtListenerClient:
         return cast(dict[str, Any], data)
 
 
+#: Codes that identify a citation CourtListener cannot adjudicate. It indexes
+#: case law; statutes, regulations and Federal Register documents are verified
+#: against the human-checked corpus instead.
+_NON_CASE_MARKERS = (
+    "c.f.r.",
+    "u.s.c.",
+    "fed. reg.",
+    "directive",
+    "pub. l.",
+    "stat.",
+)
+
+
+def is_case_citation(cite: str) -> bool:
+    """True when *cite* is case law and therefore worth sending to CourtListener.
+
+    Matching on the code is deliberate rather than on shape. "90 Fed. Reg. 4544"
+    is volume-reporter-page shaped and would pass any structural test, while
+    being exactly the kind of authority the endpoint cannot resolve.
+    """
+    lowered = cite.lower()
+    return not any(marker in lowered for marker in _NON_CASE_MARKERS)
+
+
 def _resolves(match: dict[str, Any] | None) -> tuple[bool, str]:
     """Does this citation-lookup result confirm the citation?
 
@@ -403,7 +427,18 @@ def verify_position(
     """Verify every filled citation in a position with one POST to CourtListener."""
 
     result = VerificationResult(position_side=position.side)
-    filled = [slot for slot in position.propositions if slot.normalized_cite]
+    # Only case citations go to CourtListener. It cannot resolve a C.F.R.
+    # section, a U.S.C. section or a Federal Register page no matter how correct
+    # they are, so sending them wasted a request and guaranteed a NOT_FOUND —
+    # and, worse, poisoned the cache lookup: the persistent cache is
+    # all-or-nothing per block, so one unresolvable statute forced a live call
+    # for every case citation alongside it. Three attempts at a variance
+    # estimate were lost to exactly that, each exhausting the daily quota.
+    filled = [
+        slot
+        for slot in position.propositions
+        if slot.normalized_cite and is_case_citation(slot.normalized_cite)
+    ]
     if not filled:
         result.citations = list(position.propositions)
         return result
@@ -421,7 +456,7 @@ def verify_position(
         result.error = data["error"]
         for slot in position.propositions:
             new_slot = slot.model_copy()
-            if new_slot.normalized_cite:
+            if new_slot.normalized_cite and is_case_citation(new_slot.normalized_cite):
                 new_slot.status = SlotStatus.NOT_FOUND
                 new_slot.note = f"verification failed: {data['error']}"
             result.citations.append(new_slot)
@@ -450,7 +485,10 @@ def verify_position(
 
     for slot in position.propositions:
         new_slot = slot.model_copy()
-        if not new_slot.normalized_cite:
+        # Non-case authority is left exactly as retrieval left it. Marking a
+        # C.F.R. section NOT_FOUND because CourtListener has no record of it
+        # would report a correct citation as unconfirmed.
+        if not new_slot.normalized_cite or not is_case_citation(new_slot.normalized_cite):
             result.citations.append(new_slot)
             continue
 

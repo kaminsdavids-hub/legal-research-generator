@@ -1705,8 +1705,10 @@ def test_non_operative_status_survives_verification_and_reaches_the_synthesis() 
     turn = chat.chat("Does the rule control?")
 
     slot = turn.thesis.propositions[0]
-    # Verified by CourtListener, yet the status survived the note rewrite.
-    assert slot.status == SlotStatus.VERIFIED
+    # A Federal Register page is never sent to CourtListener, so it stays
+    # `proposed` and is vouched for by the corpus. What matters here is that the
+    # non-operative status survived verification rather than being overwritten.
+    assert slot.status == SlotStatus.PROPOSED
     assert "NOT CURRENTLY OPERATIVE" in slot.note
     # And the synthesis was actually shown it.
     assert "NOT CURRENTLY OPERATIVE" in captured[0]
@@ -1936,3 +1938,73 @@ def test_a_retried_success_is_still_cached(tmp_path: Path) -> None:
     client = CourtListenerClient(token="t", http=http, cite_cache=cache, retry_backoff=0.0)
     client.lookup("392 U.S. 1", cites=["392 U.S. 1"])
     assert cache.get("392 U.S. 1") is not None
+
+
+def test_non_case_citations_are_not_sent_to_courtlistener() -> None:
+    """CourtListener indexes case law; a C.F.R. section can never resolve there.
+
+    Sending them wasted a request, guaranteed NOT_FOUND, and poisoned the cache
+    lookup: the persistent cache is all-or-nothing per block, so one statute
+    forced a live call for every case citation beside it. Three variance runs
+    were lost to that, each exhausting the daily quota.
+    """
+    from modules.dialectic.verification import is_case_citation
+
+    assert is_case_citation("392 U.S. 1")
+    assert is_case_citation("176 F.3d 1132")
+    assert is_case_citation("134 S. Ct. 2518")
+    # Volume-reporter-page shaped, yet unresolvable — why the test is on the code.
+    assert not is_case_citation("90 Fed. Reg. 4544")
+    assert not is_case_citation("15 C.F.R. 734.7")
+    assert not is_case_citation("50 U.S.C. 4801-4852")
+    assert not is_case_citation("National Security Decision Directive 189")
+
+
+def test_a_mixed_position_only_looks_up_the_case_law() -> None:
+    payload = [{
+        "citation": "392 U.S. 1", "normalized_citations": ["392 U.S. 1"],
+        "status": 200, "clusters": [{"id": 1, "case_name": "Terry v. Ohio"}],
+    }]
+    http = _FakeHTTP(status_code=200, payload=payload)
+    client = CourtListenerClient(token="t", http=http)
+    pos = Position(
+        side="thesis", model="m", family="f",
+        propositions=[
+            CitationSlot(proposition="Case point.", normalized_cite="392 U.S. 1"),
+            CitationSlot(proposition="Reg point.", normalized_cite="15 C.F.R. 734.7"),
+        ],
+    )
+    verify_position(pos, client)
+    sent = http.calls[0]["kwargs"]["data"]["text"]
+    assert "392 U.S. 1" in sent
+    assert "C.F.R." not in sent, "a regulation must never be sent to CourtListener"
+
+
+def test_a_realistic_mixed_block_now_hits_the_cache(tmp_path: Path) -> None:
+    """The assumption that went unchecked and cost three runs.
+
+    A cache holding every case citation still missed, because the block included
+    a regulation that could never be in it.
+    """
+    from modules.dialectic.verification import PersistentCiteCache
+
+    cache = PersistentCiteCache(tmp_path / "c.json")
+    cache.put_many([{
+        "citation": "392 U.S. 1", "normalized_citations": ["392 U.S. 1"],
+        "status": 200, "clusters": [{"id": 1, "case_name": "Terry v. Ohio"}],
+    }])
+    http = _FakeHTTP(status_code=200, payload=[])
+    client = CourtListenerClient(token="t", http=http, cite_cache=cache)
+    pos = Position(
+        side="thesis", model="m", family="f",
+        propositions=[
+            CitationSlot(proposition="Case point.", normalized_cite="392 U.S. 1"),
+            CitationSlot(proposition="Reg point.", normalized_cite="15 C.F.R. 734.7"),
+        ],
+    )
+    result = verify_position(pos, client)
+    assert not http.calls, "the regulation must not force a live call"
+    by_cite = {s.normalized_cite: s for s in result.citations}
+    assert by_cite["392 U.S. 1"].status == SlotStatus.VERIFIED
+    # The regulation is left untouched for the corpus to vouch for.
+    assert by_cite["15 C.F.R. 734.7"].status == SlotStatus.PENDING
