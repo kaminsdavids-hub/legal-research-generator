@@ -76,7 +76,8 @@ def copy_exchange(turn: DialecticTurn) -> str:
         "",
         _render_position(turn.antithesis),
         "",
-        f"SYNTHESIS:\n{turn.synthesis}",
+        f"SYNTHESIS:\n{turn.synthesis}"
+        + (f"\n[WARNING: {turn.synthesis_note}]" if turn.synthesis_note else ""),
     ]
     if turn.cruxes:
         parts.extend(["", "CRUX TABLE:", ""])

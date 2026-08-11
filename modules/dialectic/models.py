@@ -119,3 +119,9 @@ class DialecticTurn(BaseModel):
     #: Why the crux table is empty, when it is. An empty table with no
     #: explanation is indistinguishable from a broken extractor.
     crux_note: str = ""
+    #: Machinery-authored warning about the synthesis, e.g. that it relied on a
+    #: rescinded authority without saying so. Deliberately NOT appended to
+    #: `synthesis`: a gate that checks whether the response acknowledged a
+    #: repeal must read the model's words, and appending ours there made the
+    #: check pass on our own text.
+    synthesis_note: str = ""

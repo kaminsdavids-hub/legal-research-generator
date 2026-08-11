@@ -2008,3 +2008,104 @@ def test_a_realistic_mixed_block_now_hits_the_cache(tmp_path: Path) -> None:
     assert by_cite["392 U.S. 1"].status == SlotStatus.VERIFIED
     # The regulation is left untouched for the corpus to vouch for.
     assert by_cite["15 C.F.R. 734.7"].status == SlotStatus.PENDING
+
+
+class _StaleAuthorityRetriever:
+    """Proposes a rescinded authority and flags it."""
+
+    def propose(self, court_hint: str, proposition: str) -> list[str]:
+        return ["90 Fed. Reg. 4544"]
+
+    def annotate(self, cite: str) -> str:
+        return "NOT CURRENTLY OPERATIVE (rescinded): repealed May 2025"
+
+
+def _stale_chat(synthesis_client: Any) -> DialecticChat:
+    return DialecticChat(
+        thesis_client=_FakeLLM("hermes3", _slot_json("The rule controls.", "hint", Weight.CONTROLLING)),
+        antithesis_client=_FakeLLM(
+            "llama3.1", _slot_json("Sovereign immunity bars the claim.", "hint", Weight.CONTROLLING)
+        ),
+        synthesis_client=synthesis_client,
+        retriever=_StaleAuthorityRetriever(),
+    )
+
+
+def test_synthesis_is_retried_when_it_ignores_a_rescinded_authority() -> None:
+    """Asking in the prompt was not enough.
+
+    Question D6 acknowledged the rescission on one run and not the next two,
+    failing its temporal gate while the module was otherwise correct. The
+    synthesis is the only role that sees the status, so it is the only one that
+    can state it -- and that has to be enforced, not requested.
+    """
+    seen: list[str] = []
+
+    class _IgnoresThenComplies:
+        name = "gemma3"
+
+        def chat(self, messages: list[Any], config: Any | None = None) -> str:
+            seen.append(messages[1]["content"])
+            if len(seen) == 1:
+                return "The framework controls and the thesis prevails."
+            return "That framework was rescinded in 2025 and carries only precedential weight."
+
+    turn = _stale_chat(_IgnoresThenComplies()).chat("Does the rule control?")
+
+    assert len(seen) == 2, "the silent synthesis was not rejected"
+    assert "REJECTED" in seen[1]
+    assert "90 Fed. Reg. 4544" in seen[1]
+    assert "rescinded" in turn.synthesis.lower()
+    assert turn.regenerated >= 1
+
+
+def test_persistent_silence_degrades_visibly_rather_than_being_discarded() -> None:
+    """A usable synthesis that omits the status is kept, but flagged separately.
+
+    The warning must NOT go into `synthesis`. A gate asking "did the response
+    acknowledge the repeal" reads model-authored prose, so appending our own
+    disclosure there would make it pass on our words -- the self-satisfying gate
+    of REMEDIATION 11.5, reintroduced in a new place.
+    """
+    chat = _stale_chat(_FakeLLM("gemma3", "The framework controls and the thesis prevails."))
+    turn = chat.chat("Does the rule control?")
+
+    assert turn.synthesis == "The framework controls and the thesis prevails."
+    assert "no longer operative" not in turn.synthesis, (
+        "our warning must never contaminate the model-authored synthesis"
+    )
+    assert "no longer operative law" in turn.synthesis_note
+    assert "90 Fed. Reg. 4544" in turn.synthesis_note
+    assert "[WARNING:" in copy_exchange(turn), "the reader must still see it"
+
+
+def test_the_fallback_warning_cannot_satisfy_a_temporal_check() -> None:
+    """The regression guard for reintroducing a self-satisfying gate."""
+    from evals.harness import gate_temporal_validity
+
+    chat = _stale_chat(_FakeLLM("gemma3", "The framework controls and the thesis prevails."))
+    turn = chat.chat("Does the rule control?")
+    result = gate_temporal_validity(turn, {"90 Fed. Reg. 4544": ("rescinded", "")})
+    assert not result.passed, "our own warning must not pass the gate"
+
+
+def test_synthesis_is_not_second_guessed_when_no_authority_is_stale() -> None:
+    """The check must not fire on a turn with nothing to disclose."""
+    calls: list[Any] = []
+
+    class _Counting:
+        name = "gemma3"
+
+        def chat(self, messages: list[Any], config: Any | None = None) -> str:
+            calls.append(1)
+            return "The dispute turns on the scope of the exception."
+
+    chat = DialecticChat(
+        thesis_client=_FakeLLM("hermes3", _slot_json("T.", "hint", Weight.CONTROLLING)),
+        antithesis_client=_FakeLLM("llama3.1", _slot_json("A.", "hint", Weight.CONTROLLING)),
+        synthesis_client=_Counting(),
+        retriever=StubCiteRetriever({"hint": ["392 U.S. 1"]}),
+    )
+    turn = chat.chat("Q?")
+    assert len(calls) == 1, "no stale authority means no retry"
+    assert "no longer operative" not in turn.synthesis

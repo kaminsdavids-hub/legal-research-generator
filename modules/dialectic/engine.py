@@ -12,6 +12,7 @@ from .copy import copy_crux_table
 from .crux import CruxExtractor
 from .independence import IndependenceGuard, Mirror, MirrorDetected
 from .models import (
+    NOT_OPERATIVE,
     BudgetLedger,
     CitationSlot,
     DialecticTurn,
@@ -105,6 +106,36 @@ _REBUT_PROMPT = (
     "standard of review, a threshold question it skipped -- rather than its "
     "conclusion."
 )
+
+#: Phrases that count as saying an authority is no longer operative. Kept beside
+#: the prompt that demands them so the two cannot drift apart.
+_NON_OPERATIVE_ACK = (
+    "rescinded",
+    "superseded",
+    "no longer operative",
+    "no longer in force",
+    "not currently operative",
+    "not operative",
+    "repealed",
+    "withdrawn",
+    "never took effect",
+    "no longer good law",
+)
+
+
+def _acknowledges_non_operative(text: str) -> bool:
+    """True when *text* states, in prose, that an authority is not in force."""
+    lowered = text.lower()
+    return any(marker in lowered for marker in _NON_OPERATIVE_ACK)
+
+
+_STATUS_FEEDBACK = (
+    "\n\nYour previous answer was REJECTED. It relies on {cites}, which is NO "
+    "LONGER OPERATIVE LAW, without saying so. State plainly and in your own "
+    "words that this authority has been rescinded and now carries only "
+    "precedential weight, then give your synthesis."
+)
+
 
 _MIRROR_FEEDBACK = (
     "\n\nYour previous answer was REJECTED. These propositions merely negated "
@@ -206,6 +237,9 @@ class DialecticChat:
         # Rejects an antithesis that restates the thesis with the polarity
         # flipped. Prompting alone did not stop it (REMEDIATION 10.3).
         self.independence = independence or IndependenceGuard()
+        #: Set by `_generate_synthesis` when the synthesis had to be accepted
+        #: despite failing to disclose a non-operative authority.
+        self._pending_synthesis_note = ""
         # The NLI client is a fourth model, and it must actually reach the
         # evaluator. Constructing it and leaving `CruxExtractor()` to build a
         # client-less `NLIEvaluator` meant every relation came from the
@@ -444,7 +478,12 @@ class DialecticChat:
             f"{copy_crux_table(turn)}"
         )
 
+        stale = self._non_operative_cites(turn)
+        self._pending_synthesis_note = ""
         last_error = ""
+        best: str | None = None
+        feedback = ""
+
         for attempt in range(self.max_regenerations):
             # Same re-roll discipline the positions get. The channel is strict
             # enough that the `X v. Y` pattern fires on ordinary paraphrase, so
@@ -452,7 +491,7 @@ class DialecticChat:
             raw = self.synthesis_client.chat(
                 [
                     {"role": "system", "content": _SYNTHESIS_PROMPT},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": f"{prompt}{feedback}"},
                 ],
                 config={"temperature": 0.0 if attempt == 0 else 0.7, "seed": 7 + attempt},
             )
@@ -461,13 +500,51 @@ class DialecticChat:
             except CitationDetected as exc:
                 last_error = f"attempt {attempt}: citation string(s) rejected: {exc.hits}"
                 continue
+
+            # The synthesis is the only role that sees an authority's status, so
+            # it is the only one that can say a rule is no longer operative.
+            # Asking it in the prompt was not enough: it complied on one run and
+            # not the next two, which is how question D6 failed its temporal gate
+            # while the module was otherwise correct.
+            if stale and not _acknowledges_non_operative(raw):
+                last_error = (
+                    f"attempt {attempt}: synthesis did not state that "
+                    f"{', '.join(sorted(stale))} is no longer operative"
+                )
+                best = best or raw.strip()
+                feedback = _STATUS_FEEDBACK.format(cites=", ".join(sorted(stale)))
+                continue
+
             return raw.strip(), attempt
+
+        if best is not None:
+            # Independence-guard discipline: this is a quality failure, not a
+            # safety one, so keep the draft and mark it rather than discarding a
+            # usable synthesis. The warning goes on `synthesis_note`, never into
+            # `synthesis`: appending it there would make any check for "did the
+            # response acknowledge the repeal" pass on our own words.
+            self._pending_synthesis_note = (
+                f"this synthesis relies on {', '.join(sorted(stale))}, which is no "
+                f"longer operative law, and did not say so after "
+                f"{self.max_regenerations} attempts; treat that authority as "
+                f"precedential only"
+            )
+            return best, self.max_regenerations
 
         return (
             f"(synthesis contained a citation string and was rejected — {last_error}; "
             f"after {self.max_regenerations} attempts)",
             self.max_regenerations,
         )
+
+    @staticmethod
+    def _non_operative_cites(turn: DialecticTurn) -> set[str]:
+        """Citations in this turn whose authority is flagged as not in force."""
+        return {
+            slot.normalized_cite
+            for slot in (*turn.thesis.propositions, *turn.antithesis.propositions)
+            if slot.normalized_cite and NOT_OPERATIVE in slot.note
+        }
 
     def _verify_position(self, position: Position, ledger: BudgetLedger) -> Position:
         if self.courtlistener is None:
@@ -628,6 +705,7 @@ class DialecticChat:
         turn.crux_note = self._crux_note(turn)
 
         turn.synthesis, synthesis_retries = self._generate_synthesis(question, turn)
+        turn.synthesis_note = self._pending_synthesis_note
 
         turn.regenerated = thesis_retries + antithesis_retries + synthesis_retries
         turn.calls_spent = ledger.calls_spent
