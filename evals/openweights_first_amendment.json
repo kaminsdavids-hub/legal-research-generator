@@ -11,22 +11,57 @@
     },
     {
       "id": "temporal_validity",
-      "rule": "The AI Diffusion Rule / ECCN 4E091 (90 Fed. Reg. 4,544, Jan. 15, 2025) must be treated as rescinded (May 2025) but precedential — never as currently operative law. ECRA 2018 and the EAR must be treated as fully in force. Any response that misstates the current operative status of a cited authority fails.",
+      "rule": "The AI Diffusion Rule / ECCN 4E091 (90 Fed. Reg. 4,544, Jan. 15, 2025) must be treated as rescinded (May 2025) but precedential \u2014 never as currently operative law. ECRA 2018 and the EAR must be treated as fully in force. Any response that misstates the current operative status of a cited authority fails.",
       "on_fail": "response scores 0"
     }
   ],
   "scored_criteria": [
-    {"id": "steelmanning", "description": "both sides argued at the strength competent counsel would bring", "range": [1, 10]},
-    {"id": "authority_hierarchy", "description": "binding vs. persuasive, correct forum, good-law status", "range": [1, 10]},
-    {"id": "counterargument_anticipation", "description": "including procedural, standing, and ripeness attacks", "range": [1, 10]},
-    {"id": "crux_identification", "description": "isolates the genuinely dispositive question", "range": [1, 10]},
-    {"id": "synthesis_discipline", "description": "conclusion follows from the weighing; honest uncertainty where authority is split", "range": [1, 10]}
+    {
+      "id": "steelmanning",
+      "description": "both sides argued at the strength competent counsel would bring",
+      "range": [
+        1,
+        10
+      ]
+    },
+    {
+      "id": "authority_hierarchy",
+      "description": "binding vs. persuasive, correct forum, good-law status",
+      "range": [
+        1,
+        10
+      ]
+    },
+    {
+      "id": "counterargument_anticipation",
+      "description": "including procedural, standing, and ripeness attacks",
+      "range": [
+        1,
+        10
+      ]
+    },
+    {
+      "id": "crux_identification",
+      "description": "isolates the genuinely dispositive question",
+      "range": [
+        1,
+        10
+      ]
+    },
+    {
+      "id": "synthesis_discipline",
+      "description": "conclusion follows from the weighing; honest uncertainty where authority is split",
+      "range": [
+        1,
+        10
+      ]
+    }
   ],
   "harness_rules": {
     "retrieval_requirement": "every authority must come through the legal research tool call; responses may cite only retrieved sources",
     "secondary_source_discipline": "2026 news reporting on enforcement actions may frame a question but may not serve as legal authority; primary documents (Federal Register, slip opinions, U.S.C., C.F.R.) required for any proposition of law",
     "scoring_output": "per-question JSON {gates: pass/fail, scores: [5 x 1-10], judge_rationale}, aggregated per cluster and overall",
-    "plateau_rule": "mean overall score change < 0.2 across 3 consecutive optimization rounds",
+    "plateau_rule": "mean overall score change < 0.5 across 3 consecutive optimization rounds. Raised from the originally specified 0.2 after measuring the noise floor: repeated runs of unchanged code moved by 0.087 to 0.219 depending on whether a citation gate flipped, and one flip costs about 0.24 on a 32-question mean.",
     "holdout_discipline": "holdout questions are never shown to any optimization loop; use only for final validation"
   },
   "clusters": {
@@ -37,7 +72,16 @@
     "E": "National-security deference after TikTok v. Garland",
     "F": "Tailoring and less-restrictive alternatives"
   },
-  "holdout_ids": ["A4", "A8", "B4", "C3", "D3", "E3", "F3", "F6"],
+  "holdout_ids": [
+    "A4",
+    "A8",
+    "B4",
+    "C3",
+    "D3",
+    "E3",
+    "F3",
+    "F6"
+  ],
   "questions": [
     {
       "id": "A1",
@@ -45,7 +89,12 @@
       "holdout": false,
       "question": "Are trained model weights \"speech\" under the First Amendment, or a functional artifact? Argue both sides.",
       "frame": "declaratory judgment action, N.D. Cal. / Ninth Circuit",
-      "must_engage": ["Bernstein v. DOJ", "Junger v. Daley", "the machine-generated vs. human-authored distinction", "Sorrell v. IMS Health"]
+      "must_engage": [
+        "Bernstein v. DOJ",
+        "Junger v. Daley",
+        "the machine-generated vs. human-authored distinction",
+        "Sorrell v. IMS Health"
+      ]
     },
     {
       "id": "A2",
@@ -53,7 +102,10 @@
       "holdout": false,
       "question": "Does the distinction between source code (Bernstein/Junger) and trained parameters make a constitutional difference, or is it a distinction without one?",
       "frame": "academic amicus posture",
-      "must_engage": ["what made code expressive in the crypto cases (communication among scientists)", "whether weights communicate anything to a human reader"]
+      "must_engage": [
+        "what made code expressive in the crypto cases (communication among scientists)",
+        "whether weights communicate anything to a human reader"
+      ]
     },
     {
       "id": "A3",
@@ -61,7 +113,11 @@
       "holdout": false,
       "question": "A US lab publishes frontier model weights with a paper describing the training run. The government argues the weights are severable from the (concededly protected) paper. Assess.",
       "frame": "as-applied challenge",
-      "must_engage": ["severability of expressive and functional components", "Defense Distributed v. U.S. Dep't of State", "Spence/Hurley expressive-conduct tests"]
+      "must_engage": [
+        "severability of expressive and functional components",
+        "Defense Distributed v. U.S. Dep't of State",
+        "Spence/Hurley expressive-conduct tests"
+      ]
     },
     {
       "id": "A4",
@@ -69,7 +125,11 @@
       "holdout": true,
       "question": "Is releasing open weights more like publishing a scientific paper, exporting a machine tool, or distributing a dual-use chemical precursor? Argue each analogy's best case and pick the one a court should adopt.",
       "frame": "",
-      "must_engage": ["functionality doctrine", "Brown v. Entertainment Merchants Ass'n (no new categories of unprotected speech)", "United States v. O'Brien"]
+      "must_engage": [
+        "functionality doctrine",
+        "Brown v. Entertainment Merchants Ass'n (no new categories of unprotected speech)",
+        "United States v. O'Brien"
+      ]
     },
     {
       "id": "A5",
@@ -77,7 +137,10 @@
       "holdout": false,
       "question": "Does it matter constitutionally that weights only \"function\" when combined with third-party inference code and hardware?",
       "frame": "motion-to-dismiss briefing",
-      "must_engage": ["the \"mere instructions\" line of cases", "incitement/aiding distinctions (Rice v. Paladin Enters. as the outer bound)"]
+      "must_engage": [
+        "the \"mere instructions\" line of cases",
+        "incitement/aiding distinctions (Rice v. Paladin Enters. as the outer bound)"
+      ]
     },
     {
       "id": "A6",
@@ -85,7 +148,10 @@
       "holdout": false,
       "question": "Fine-tuned weights: if a person fine-tunes an open model on their own curated corpus and publishes the delta (LoRA adapter), is the adapter more clearly expressive than the base weights? Argue both directions.",
       "frame": "",
-      "must_engage": ["human curation as expressive choice", "compilation copyright analogy (Feist) as persuasive-only framing"]
+      "must_engage": [
+        "human curation as expressive choice",
+        "compilation copyright analogy (Feist) as persuasive-only framing"
+      ]
     },
     {
       "id": "A7",
@@ -93,7 +159,10 @@
       "holdout": false,
       "question": "The government proposes treating weights above a compute threshold (e.g., 10^26 operations) as presumptively functional. Is a compute threshold a content-neutral line?",
       "frame": "facial challenge",
-      "must_engage": ["content neutrality doctrine (Reed v. Town of Gilbert; City of Austin)", "whether capability is a proxy for content"]
+      "must_engage": [
+        "content neutrality doctrine (Reed v. Town of Gilbert; City of Austin)",
+        "whether capability is a proxy for content"
+      ]
     },
     {
       "id": "A8",
@@ -101,7 +170,10 @@
       "holdout": true,
       "question": "Synthesis question: draft the single strongest paragraph for each side on weights-as-speech, then state which crux a reviewing court cannot avoid deciding.",
       "frame": "",
-      "must_engage": ["honest identification that no controlling authority resolves the question", "circuit posture differences (Ninth vs. Fifth)"]
+      "must_engage": [
+        "honest identification that no controlling authority resolves the question",
+        "circuit posture differences (Ninth vs. Fifth)"
+      ]
     },
     {
       "id": "B1",
@@ -109,15 +181,22 @@
       "holdout": false,
       "question": "Would a BIS licensing requirement for publishing open weights operate as a prior restraint? Argue both sides.",
       "frame": "pre-enforcement challenge, D.C. Circuit APA posture",
-      "must_engage": ["Bernstein's prior-restraint holding and its later vacatur", "Freedman v. Maryland procedural safeguards", "ECRA 2018 statutory authority"]
+      "must_engage": [
+        "Bernstein's prior-restraint holding and its later vacatur",
+        "Freedman v. Maryland procedural safeguards",
+        "ECRA 2018 statutory authority"
+      ]
     },
     {
       "id": "B2",
       "cluster": "B",
       "holdout": false,
-      "question": "The EAR excludes \"published\" information from control (15 C.F.R. § 734.7). Can BIS constitutionally narrow or abandon that exclusion for AI weights specifically?",
+      "question": "The EAR excludes \"published\" information from control (15 C.F.R. \u00a7 734.7). Can BIS constitutionally narrow or abandon that exclusion for AI weights specifically?",
       "frame": "notice-and-comment rulemaking challenge",
-      "must_engage": ["the exclusion's role in past constitutional avoidance", "APA arbitrary-and-capricious review interacting with constitutional avoidance canon"]
+      "must_engage": [
+        "the exclusion's role in past constitutional avoidance",
+        "APA arbitrary-and-capricious review interacting with constitutional avoidance canon"
+      ]
     },
     {
       "id": "B3",
@@ -125,7 +204,11 @@
       "holdout": false,
       "question": "Is a rule controlling only closed-weight models (as ECCN 4E091 did) on firmer constitutional footing than one reaching open weights? Why exactly?",
       "frame": "",
-      "must_engage": ["the rescinded AI Diffusion Rule's design", "voluntary nondisclosure vs. compelled nondisclosure", "trade-secret-holder posture"]
+      "must_engage": [
+        "the rescinded AI Diffusion Rule's design",
+        "voluntary nondisclosure vs. compelled nondisclosure",
+        "trade-secret-holder posture"
+      ]
     },
     {
       "id": "B4",
@@ -133,7 +216,11 @@
       "holdout": true,
       "question": "After a model's weights have already been published and mirrored globally, does the government retain any constitutionally permissible enforcement action against the original publisher?",
       "frame": "enforcement action defense",
-      "must_engage": ["futility/mootness of restraint on published material", "Near v. Minnesota", "the 2026 enforcement-practicality commentary as context, primary law as authority"]
+      "must_engage": [
+        "futility/mootness of restraint on published material",
+        "Near v. Minnesota",
+        "the 2026 enforcement-practicality commentary as context, primary law as authority"
+      ]
     },
     {
       "id": "B5",
@@ -141,7 +228,10 @@
       "holdout": false,
       "question": "Compare the constitutional posture of (i) a ban on publishing weights, (ii) a licensing regime, and (iii) a post-publication liability regime. Rank by vulnerability and defend the ranking.",
       "frame": "",
-      "must_engage": ["prior restraint vs. subsequent punishment doctrine", "vagueness/overbreadth for the liability option"]
+      "must_engage": [
+        "prior restraint vs. subsequent punishment doctrine",
+        "vagueness/overbreadth for the liability option"
+      ]
     },
     {
       "id": "B6",
@@ -149,7 +239,11 @@
       "holdout": false,
       "question": "Does ECRA 2018's grant of authority clearly authorize weight controls, or does the major questions doctrine constrain BIS?",
       "frame": "statutory-first briefing strategy",
-      "must_engage": ["West Virginia v. EPA", "constitutional avoidance as a reason to read ECRA narrowly", "counterargument from ECRA's dual-use breadth"]
+      "must_engage": [
+        "West Virginia v. EPA",
+        "constitutional avoidance as a reason to read ECRA narrowly",
+        "counterargument from ECRA's dual-use breadth"
+      ]
     },
     {
       "id": "B7",
@@ -157,7 +251,11 @@
       "holdout": false,
       "question": "A replacement BIS rule controls weights but includes a license exception for \"fundamental research.\" Does the exception save the rule?",
       "frame": "facial vs. as-applied strategy memo",
-      "must_engage": ["NSDD-189 fundamental research tradition", "unconstitutional-conditions concerns", "administrability critique from both sides"]
+      "must_engage": [
+        "NSDD-189 fundamental research tradition",
+        "unconstitutional-conditions concerns",
+        "administrability critique from both sides"
+      ]
     },
     {
       "id": "C1",
@@ -165,16 +263,23 @@
       "holdout": false,
       "question": "Would a federal prohibition on US persons downloading a named Chinese open-weight model survive First Amendment review?",
       "frame": "citizen-plaintiff suit",
-      "must_engage": ["Lamont v. Postmaster General", "Stanley v. Georgia receipt/possession line", "the government's foreign-adversary framing"]
+      "must_engage": [
+        "Lamont v. Postmaster General",
+        "Stanley v. Georgia receipt/possession line",
+        "the government's foreign-adversary framing"
+      ]
     },
     {
       "id": "C2",
       "cluster": "C",
       "holdout": false,
       "central_crux": true,
-      "question": "Does Lamont's holding — protecting receipt of foreign communist propaganda — extend from expressive propaganda to a functional software artifact? Argue both sides; this is the cluster's central crux.",
+      "question": "Does Lamont's holding \u2014 protecting receipt of foreign communist propaganda \u2014 extend from expressive propaganda to a functional software artifact? Argue both sides; this is the cluster's central crux.",
       "frame": "",
-      "must_engage": ["whether receipt rights track the speech status of the received item (link back to Cluster A)", "Kleindienst v. Mandel listener-interest framing"]
+      "must_engage": [
+        "whether receipt rights track the speech status of the received item (link back to Cluster A)",
+        "Kleindienst v. Mandel listener-interest framing"
+      ]
     },
     {
       "id": "C3",
@@ -182,7 +287,11 @@
       "holdout": true,
       "question": "A rule bans federal procurement and contractor use of Chinese models but not private downloading. Constitutional analysis.",
       "frame": "government-as-market-participant defense",
-      "must_engage": ["government speech/procurement doctrine", "unconstitutional conditions for contractors", "why this design is the predicted regulatory endpoint"]
+      "must_engage": [
+        "government speech/procurement doctrine",
+        "unconstitutional conditions for contractors",
+        "why this design is the predicted regulatory endpoint"
+      ]
     },
     {
       "id": "C4",
@@ -190,7 +299,11 @@
       "holdout": false,
       "question": "The foreign lab that published the model sues (or joins US users' suit). What rights, if any, does a foreign publisher abroad hold?",
       "frame": "standing and merits",
-      "must_engage": ["Agency for Int'l Development v. AOSI II", "third-party standing of US listeners to assert receipt interests", "prudential limits"]
+      "must_engage": [
+        "Agency for Int'l Development v. AOSI II",
+        "third-party standing of US listeners to assert receipt interests",
+        "prudential limits"
+      ]
     },
     {
       "id": "C5",
@@ -198,7 +311,10 @@
       "holdout": false,
       "question": "Does it matter that China itself is moving to restrict export of the same weights? Can reciprocity or foreign-government control feature in the US government's interest analysis?",
       "frame": "",
-      "must_engage": ["TikTok v. Garland's foreign-adversary-control rationale", "distinction between ownership/control of a platform and origin of a published artifact"]
+      "must_engage": [
+        "TikTok v. Garland's foreign-adversary-control rationale",
+        "distinction between ownership/control of a platform and origin of a published artifact"
+      ]
     },
     {
       "id": "C6",
@@ -206,7 +322,11 @@
       "holdout": false,
       "question": "An IEEPA-based executive action blocks transactions with the foreign lab, incidentally preventing Americans from accessing hosted versions while weights remain downloadable. Assess.",
       "frame": "",
-      "must_engage": ["IEEPA's Berman Amendment informational-materials exception", "whether weights are \"informational materials\"", "severability of hosted-service vs. publication restrictions"]
+      "must_engage": [
+        "IEEPA's Berman Amendment informational-materials exception",
+        "whether weights are \"informational materials\"",
+        "severability of hosted-service vs. publication restrictions"
+      ]
     },
     {
       "id": "C7",
@@ -214,7 +334,10 @@
       "holdout": false,
       "question": "Synthesis: write the strongest paragraph for the proposition that inbound model bans are more constitutionally vulnerable than outbound export controls, and the strongest rebuttal.",
       "frame": "",
-      "must_engage": ["domestic listener rights vs. extraterritorial application", "deference asymmetry"]
+      "must_engage": [
+        "domestic listener rights vs. extraterritorial application",
+        "deference asymmetry"
+      ]
     },
     {
       "id": "D1",
@@ -222,7 +345,11 @@
       "holdout": false,
       "question": "A university lab includes foreign graduate students from D:5 countries. A hypothetical weight-control rule makes sharing controlled model artifacts with them a deemed export requiring a license. Constitutional assessment.",
       "frame": "university plaintiff",
-      "must_engage": ["deemed export doctrine under the EAR", "academic freedom line (Sweezy, Keyishian) and its doctrinal softness", "equal protection / alienage angles and their weakness in the national-security context"]
+      "must_engage": [
+        "deemed export doctrine under the EAR",
+        "academic freedom line (Sweezy, Keyishian) and its doctrinal softness",
+        "equal protection / alienage angles and their weakness in the national-security context"
+      ]
     },
     {
       "id": "D2",
@@ -230,15 +357,22 @@
       "holdout": false,
       "question": "Do foreign nationals lawfully present in the US have a First Amendment right to receive controlled model weights that citizens may receive? Argue both sides.",
       "frame": "",
-      "must_engage": ["Bridges v. Wixon", "distinction between presence-based rights and immigration-consequence cases", "the government's Verdugo-Urquidez-flavored counterargument"]
+      "must_engage": [
+        "Bridges v. Wixon",
+        "distinction between presence-based rights and immigration-consequence cases",
+        "the government's Verdugo-Urquidez-flavored counterargument"
+      ]
     },
     {
       "id": "D3",
       "cluster": "D",
       "holdout": true,
-      "question": "Nationality-based licensing (license turns on citizenship/permanent residency of the recipient) — strict scrutiny, intermediate, or rational basis?",
+      "question": "Nationality-based licensing (license turns on citizenship/permanent residency of the recipient) \u2014 strict scrutiny, intermediate, or rational basis?",
       "frame": "motion for preliminary injunction",
-      "must_engage": ["federal alienage classifications and plenary-power deference vs. speech overlay", "narrow tailoring evidence problems"]
+      "must_engage": [
+        "federal alienage classifications and plenary-power deference vs. speech overlay",
+        "narrow tailoring evidence problems"
+      ]
     },
     {
       "id": "D4",
@@ -246,7 +380,10 @@
       "holdout": false,
       "question": "A US researcher co-authors with an overseas collaborator; the collaboration necessarily transmits model artifacts abroad. Is scientific collaboration itself protected association or expression?",
       "frame": "as-applied challenge",
-      "must_engage": ["AOSI I (compelled speech of US persons) vs. AOSI II (foreign entities)", "Bernstein's scientific-communication rationale"]
+      "must_engage": [
+        "AOSI I (compelled speech of US persons) vs. AOSI II (foreign entities)",
+        "Bernstein's scientific-communication rationale"
+      ]
     },
     {
       "id": "D5",
@@ -254,7 +391,10 @@
       "holdout": false,
       "question": "Compare the deemed-export burden on AI research with the historical crypto-research burden that produced Bernstein. Is the constitutional case stronger or weaker today?",
       "frame": "",
-      "must_engage": ["changed facts (scale, commercial ubiquity, open-source norms)", "changed doctrine (Reed, NetChoice-era scrutiny of speech regulation)"]
+      "must_engage": [
+        "changed facts (scale, commercial ubiquity, open-source norms)",
+        "changed doctrine (Reed, NetChoice-era scrutiny of speech regulation)"
+      ]
     },
     {
       "id": "D6",
@@ -262,16 +402,23 @@
       "holdout": false,
       "question": "Synthesis: identify the single fact pattern in this cluster most likely to produce a plaintiff's win, and defend the selection against the two next-best candidates.",
       "frame": "",
-      "must_engage": ["sympathetic-plaintiff selection logic", "ripeness/standing practicalities"]
+      "must_engage": [
+        "sympathetic-plaintiff selection logic",
+        "ripeness/standing practicalities"
+      ]
     },
     {
       "id": "E1",
       "cluster": "E",
       "holdout": false,
       "central_crux": true,
-      "question": "Does TikTok v. Garland's deferential posture govern a challenge to model-weight controls, or is it limited to foreign-adversary ownership and control of a communications platform? This is the cluster's central crux — argue both sides fully.",
+      "question": "Does TikTok v. Garland's deferential posture govern a challenge to model-weight controls, or is it limited to foreign-adversary ownership and control of a communications platform? This is the cluster's central crux \u2014 argue both sides fully.",
       "frame": "",
-      "must_engage": ["the decision's express narrowness signals", "data-collection vs. content rationales", "covert-manipulation rationale's fit or misfit for published weights"]
+      "must_engage": [
+        "the decision's express narrowness signals",
+        "data-collection vs. content rationales",
+        "covert-manipulation rationale's fit or misfit for published weights"
+      ]
     },
     {
       "id": "E2",
@@ -279,7 +426,11 @@
       "holdout": false,
       "question": "What level of scrutiny should apply to a content-neutral weight-export rule justified on capability (not viewpoint) grounds?",
       "frame": "appellate briefing",
-      "must_engage": ["O'Brien intermediate scrutiny", "Ward narrow tailoring", "the argument that capability thresholds are speaker- or content-based in effect"]
+      "must_engage": [
+        "O'Brien intermediate scrutiny",
+        "Ward narrow tailoring",
+        "the argument that capability thresholds are speaker- or content-based in effect"
+      ]
     },
     {
       "id": "E3",
@@ -287,7 +438,11 @@
       "holdout": true,
       "question": "How much evidentiary support must the government produce for its national-security predictions (e.g., weight proliferation materially advances adversary capabilities)?",
       "frame": "record review",
-      "must_engage": ["Holder v. Humanitarian Law Project deference to predictive judgments", "its material-support cabining", "TikTok's record treatment"]
+      "must_engage": [
+        "Holder v. Humanitarian Law Project deference to predictive judgments",
+        "its material-support cabining",
+        "TikTok's record treatment"
+      ]
     },
     {
       "id": "E4",
@@ -295,7 +450,10 @@
       "holdout": false,
       "question": "Humanitarian Law Project upheld a ban on speech coordinated with designated groups. Can weight publication to the world ever be analogized to coordinated support? Argue the government's best version and dismantle it.",
       "frame": "",
-      "must_engage": ["independent advocacy vs. coordination line", "the generality of publication"]
+      "must_engage": [
+        "independent advocacy vs. coordination line",
+        "the generality of publication"
+      ]
     },
     {
       "id": "E5",
@@ -303,15 +461,21 @@
       "holdout": false,
       "question": "If the Court extends TikTok-style deference to model controls, what limiting principle remains? Write the parade-of-horribles brief and the government's answer to it.",
       "frame": "",
-      "must_engage": ["slippery-slope reasoning discipline", "press-freedom implications for publishing technical information generally"]
+      "must_engage": [
+        "slippery-slope reasoning discipline",
+        "press-freedom implications for publishing technical information generally"
+      ]
     },
     {
       "id": "E6",
       "cluster": "E",
       "holdout": false,
-      "question": "Synthesis: state the narrowest holding that would sustain a weight-control regime and the narrowest holding that would strike one down; identify which is more likely from the current Court and why — with honest uncertainty.",
+      "question": "Synthesis: state the narrowest holding that would sustain a weight-control regime and the narrowest holding that would strike one down; identify which is more likely from the current Court and why \u2014 with honest uncertainty.",
       "frame": "",
-      "must_engage": ["current Court's technology-speech trajectory (NetChoice, TikTok)", "no overclaiming"]
+      "must_engage": [
+        "current Court's technology-speech trajectory (NetChoice, TikTok)",
+        "no overclaiming"
+      ]
     },
     {
       "id": "F1",
@@ -319,7 +483,10 @@
       "holdout": false,
       "question": "The government defends a publication ban; challengers propose procurement restrictions, compute-provider KYC, and hosting rules as less restrictive alternatives. Who wins the tailoring fight?",
       "frame": "strict-scrutiny briefing",
-      "must_engage": ["LRA doctrine (McCullen v. Coakley; Ashcroft v. ACLU)", "whether the alternatives actually serve the interest (effectiveness rebuttal)"]
+      "must_engage": [
+        "LRA doctrine (McCullen v. Coakley; Ashcroft v. ACLU)",
+        "whether the alternatives actually serve the interest (effectiveness rebuttal)"
+      ]
     },
     {
       "id": "F2",
@@ -327,15 +494,21 @@
       "holdout": false,
       "question": "Are structural controls (chip export controls, cloud-compute restrictions) constitutionally preferable because they regulate conduct and hardware rather than expression? Argue both sides.",
       "frame": "",
-      "must_engage": ["O'Brien conduct framing", "the counterargument that targeting the means of speech production is still speech regulation (Minneapolis Star)"]
+      "must_engage": [
+        "O'Brien conduct framing",
+        "the counterargument that targeting the means of speech production is still speech regulation (Minneapolis Star)"
+      ]
     },
     {
       "id": "F3",
       "cluster": "F",
       "holdout": true,
-      "question": "Assess a disclosure/registration alternative: publishers of frontier weights must register, disclose safety evaluations, and retain provenance records — but may publish.",
+      "question": "Assess a disclosure/registration alternative: publishers of frontier weights must register, disclose safety evaluations, and retain provenance records \u2014 but may publish.",
       "frame": "compelled-speech and anonymity challenge",
-      "must_engage": ["Zauderer commercial-disclosure framing and its fit problems", "NAACP v. Alabama / Talley anonymity interests for individual researchers"]
+      "must_engage": [
+        "Zauderer commercial-disclosure framing and its fit problems",
+        "NAACP v. Alabama / Talley anonymity interests for individual researchers"
+      ]
     },
     {
       "id": "F4",
@@ -343,7 +516,10 @@
       "holdout": false,
       "question": "Does the global availability of comparable non-US models doom narrow tailoring for any US publication restriction?",
       "frame": "effectiveness prong",
-      "must_engage": ["underinclusiveness doctrine (Church of Lukumi; Williams-Yulee's tolerance)", "government's incremental-benefit rebuttal"]
+      "must_engage": [
+        "underinclusiveness doctrine (Church of Lukumi; Williams-Yulee's tolerance)",
+        "government's incremental-benefit rebuttal"
+      ]
     },
     {
       "id": "F5",
@@ -351,7 +527,11 @@
       "holdout": false,
       "question": "Design the weight-control regime most likely to survive review, clause by clause, and then write the strongest surviving challenge to your own design.",
       "frame": "",
-      "must_engage": ["severability drafting", "sunset and evidentiary-record provisions", "the residual weights-as-speech objection from Cluster A"]
+      "must_engage": [
+        "severability drafting",
+        "sunset and evidentiary-record provisions",
+        "the residual weights-as-speech objection from Cluster A"
+      ]
     },
     {
       "id": "F6",
@@ -359,7 +539,11 @@
       "holdout": true,
       "question": "Full-synthesis capstone: in one memo, state the three cruxes on which the entire field turns, the current best answer to each with authority, and the open question a scholarly paper can most usefully resolve. (This question evaluates whether the module can serve the actual research paper.)",
       "frame": "",
-      "must_engage": ["cross-cluster integration", "honest gap identification", "no citation padding"]
+      "must_engage": [
+        "cross-cluster integration",
+        "honest gap identification",
+        "no citation padding"
+      ]
     }
   ]
 }

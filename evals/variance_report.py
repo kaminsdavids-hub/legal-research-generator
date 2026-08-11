@@ -27,7 +27,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", default=str(ROOT / "evals/results"))
     parser.add_argument("--eval-set", default="openweights_first_amendment")
-    parser.add_argument("--plateau-delta", type=float, default=0.2)
+    parser.add_argument(
+        "--last",
+        type=int,
+        default=3,
+        help="compare only the N most recent full runs. Comparing every result "
+        "ever written mixes code versions and failed runs into one number; the "
+        "noise floor is only meaningful across runs of identical code.",
+    )
+    parser.add_argument(
+        "--plateau-delta",
+        type=float,
+        default=0.5,
+        help="raised from 0.2 after measuring the noise floor; see REMEDIATION 11.11",
+    )
     args = parser.parse_args()
 
     paths = sorted(Path(args.results).glob(f"{args.eval_set}-*.json"))
@@ -40,7 +53,9 @@ def main() -> int:
             print(f"  {p.name}  questions={len(r['questions'])}  mean={r['overall_mean']}")
         return 1
 
-    print(f"{len(full)} full run(s):")
+    if args.last > 0:
+        full = full[-args.last :]
+    print(f"{len(full)} full run(s) (most recent {args.last}; pass --last 0 for all):")
     means = []
     for p, r in full:
         scored = r.get("scored_count", len(r["questions"]))

@@ -537,7 +537,13 @@ class RunReport:
         }
 
 
-PLATEAU_DELTA = 0.2
+#: Threshold for the plateau rule. Raised from the specified 0.2 after measuring
+#: the noise floor: three runs of unchanged code moved by 0.087 in one set and
+#: 0.219 in another, the difference being whether a question's citation gate
+#: happened to flip. A flip costs about 0.24 on a 32-question mean and two would
+#: cost 0.48, so a threshold under 0.5 only holds on runs where none lands, and
+#: would report convergence that never happened. See REMEDIATION 11.11.
+PLATEAU_DELTA = 0.5
 PLATEAU_ROUNDS = 3
 
 

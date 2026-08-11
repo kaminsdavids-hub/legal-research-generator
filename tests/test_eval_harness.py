@@ -345,6 +345,25 @@ def test_plateau_needs_three_consecutive_small_changes() -> None:
     assert not has_plateaued([])
 
 
+def test_the_threshold_sits_above_the_measured_noise_floor() -> None:
+    """0.2 was the specified threshold; measurement showed it is not usable.
+
+    Three runs of unchanged code moved by 0.087 in one set and 0.219 in another,
+    the difference being whether a citation gate happened to flip. A flip costs
+    about 0.24 on a 32-question mean, so a threshold below that reports
+    convergence on a coin toss.
+    """
+    from evals.harness import PLATEAU_DELTA
+
+    assert PLATEAU_DELTA >= 0.5
+    # The worst observed floor must not register as a plateau.
+    assert not has_plateaued([6.769, 6.550, 6.700, 6.950], delta=0.2)
+    # A genuinely flat series still does, at the new threshold.
+    assert has_plateaued([6.70, 6.72, 6.69, 6.71])
+    # And a single gate flip, worth ~0.24, does not break a plateau at 0.5.
+    assert has_plateaued([6.70, 6.94, 6.70, 6.94])
+
+
 def test_plateau_is_insensitive_to_direction() -> None:
     """A steady decline is a plateau too; the rule is about magnitude."""
     assert has_plateaued([6.0, 5.9, 5.8, 5.7])
