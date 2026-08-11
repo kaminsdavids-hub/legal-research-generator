@@ -439,6 +439,12 @@ class QuestionResult:
     #: Set when the question could not be run at all (timeout, transport error).
     #: Distinct from a gate failure: nothing was measured, so nothing is known.
     error: str = ""
+    #: Module diagnostics. Recorded because a scored result alone cannot explain
+    #: a change in cost: enforcing disclosure of non-operative authority doubled
+    #: run time, and nothing in the output said which questions were retrying.
+    regenerated: int = 0
+    crux_count: int = 0
+    synthesis_note: str = ""
 
     @property
     def gates_passed(self) -> bool:
@@ -478,6 +484,9 @@ class QuestionResult:
             "holdout": self.holdout,
             "scored": self.scored,
             "error": self.error,
+            "regenerated": self.regenerated,
+            "crux_count": self.crux_count,
+            "synthesis_note": self.synthesis_note,
             "gates": {
                 "pass": self.gates_passed,
                 "detail": {g.id: {"pass": g.passed, "detail": g.detail} for g in self.gates},
@@ -517,6 +526,21 @@ class RunReport:
     def gate_failures(self) -> list[str]:
         return [r.id for r in self.results if not r.gates_passed]
 
+    def retry_cost(self) -> dict[str, Any]:
+        """How much regeneration this run spent, and where.
+
+        A retry is a full generation, so this is the difference between a fast
+        run and a slow one. `undisclosed` counts questions kept despite never
+        disclosing a non-operative authority, which is the enforcement giving up.
+        """
+        regen = [r.regenerated for r in self.results]
+        return {
+            "total": sum(regen),
+            "questions_with_retries": sum(1 for r in regen if r),
+            "max": max(regen, default=0),
+            "undisclosed": [r.id for r in self.results if r.synthesis_note],
+        }
+
     def unscored(self) -> list[str]:
         """Questions with no usable score: missing data, never a zero."""
         return [r.id for r in self.results if r.score is None]
@@ -535,6 +559,7 @@ class RunReport:
             "cluster_means": self.cluster_means(),
             "gate_failures": self.gate_failures(),
             "unscored_judge_failed": self.unscored(),
+            "retry_cost": self.retry_cost(),
             "run_errors": self.errors(),
             "questions": [r.to_dict() for r in self.results],
         }

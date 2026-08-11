@@ -223,6 +223,9 @@ def main() -> int:
                 holdout=question.holdout,
                 gates=gates,
                 verdict=verdict,
+                regenerated=turn.regenerated,
+                crux_count=len(turn.cruxes),
+                synthesis_note=turn.synthesis_note,
             )
             cruxes = len(turn.cruxes)
         except Exception as exc:  # noqa: BLE001 - a dead question is data, not a crash
@@ -247,7 +250,8 @@ def main() -> int:
             flag, shown = "JUDGE FAILED", "unscored"
         else:
             flag, shown = "PASS", f"{result.score:.2f}"
-        print(f"     {flag}  mean={shown}  cruxes={cruxes}", flush=True)
+        extra = f"  regen={result.regenerated}" if result.regenerated else ""
+        print(f"     {flag}  mean={shown}  cruxes={cruxes}{extra}", flush=True)
 
     out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
 
@@ -256,6 +260,7 @@ def main() -> int:
           f"(over {len(report._scored)}/{len(report.results)} scored)")
     print(f"per cluster  : {report.cluster_means()}")
     print(f"gate failures: {report.gate_failures() or 'none'}")
+    print(f"retry cost   : {report.retry_cost()}")
     print(f"judge failed : {report.unscored() or 'none'}  (excluded from the mean, not scored 0)")
     if report.errors():
         print(f"run errors   : {report.errors()}")

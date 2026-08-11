@@ -668,3 +668,29 @@ def test_round_id_reaches_the_report() -> None:
     assert build_parser().parse_args([]).round_id == ""
     report = RunReport(eval_set="x", round_id="floor-A")
     assert report.to_dict()["round_id"] == "floor-A"
+
+
+def test_retry_cost_is_recorded_and_attributed() -> None:
+    """A scored result alone cannot explain a change in cost.
+
+    Enforcing disclosure of non-operative authority roughly doubled run time and
+    nothing in the output said which questions were retrying, or which had been
+    kept despite never disclosing.
+    """
+    from evals.harness import GateResult
+
+    ok = GateResult("citation_integrity", True, "")
+    report = RunReport(eval_set="x")
+    report.results = [
+        QuestionResult("A1", "A", False, [ok], parse_verdict(_judge_json()), regenerated=0),
+        QuestionResult("D6", "D", False, [ok], parse_verdict(_judge_json()), regenerated=3,
+                       synthesis_note="relies on 90 Fed. Reg. 4544 and did not say so"),
+        QuestionResult("B3", "B", False, [ok], parse_verdict(_judge_json()), regenerated=1),
+    ]
+    cost = report.retry_cost()
+    assert cost["total"] == 4
+    assert cost["questions_with_retries"] == 2
+    assert cost["max"] == 3
+    assert cost["undisclosed"] == ["D6"], "a kept-but-undisclosed synthesis must be nameable"
+    assert report.to_dict()["retry_cost"]["total"] == 4
+    assert report.to_dict()["questions"][1]["regenerated"] == 3
