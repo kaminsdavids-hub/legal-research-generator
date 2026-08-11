@@ -494,6 +494,8 @@ class QuestionResult:
 class RunReport:
     eval_set: str
     results: list[QuestionResult] = field(default_factory=list)
+    #: Runs sharing a round id are averaged before the plateau rule is applied.
+    round_id: str = ""
 
     @property
     def _scored(self) -> list[QuestionResult]:
@@ -526,6 +528,7 @@ class RunReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "eval_set": self.eval_set,
+            "round_id": self.round_id,
             "overall_mean": round(self.overall_mean, 3),
             "scored_count": len(self._scored),
             "total_count": len(self.results),
@@ -537,7 +540,15 @@ class RunReport:
         }
 
 
-#: Threshold for the plateau rule. Raised from the specified 0.2 after measuring
+#: Threshold for the plateau rule when a round is the average of several runs.
+#: Averaging is what makes the originally specified 0.2 usable: a citation gate
+#: flip moves a single run's mean by about 0.24, but only 0.24/N on a round of N
+#: runs, and ordinary drift falls as 1/sqrt(N). At N=3 that is roughly 0.08 plus
+#: 0.05, comfortably inside 0.2. Measuring rather than assuming this needs two
+#: rounds on identical code -- six runs -- which has not been done yet.
+ROUND_PLATEAU_DELTA = 0.2
+
+#: Threshold when comparing single runs. Raised from the specified 0.2 after measuring
 #: the noise floor: three runs of unchanged code moved by 0.087 in one set and
 #: 0.219 in another, the difference being whether a question's citation gate
 #: happened to flip. A flip costs about 0.24 on a 32-question mean and two would
@@ -545,6 +556,33 @@ class RunReport:
 #: would report convergence that never happened. See REMEDIATION 11.11.
 PLATEAU_DELTA = 0.5
 PLATEAU_ROUNDS = 3
+
+
+def round_means(runs: Sequence[tuple[str, float]], *, per_round: int = 3) -> list[float]:
+    """Collapse per-run means into per-round means.
+
+    ``runs`` is ``(round_id, mean)`` in run order. Runs carrying a round id are
+    grouped by it; runs without one are chunked by *per_round* in order, which
+    is what a set produced before round ids existed looks like.
+    """
+    grouped: dict[str, list[float]] = {}
+    order: list[str] = []
+    unlabelled: list[float] = []
+    for round_id, mean in runs:
+        if not round_id:
+            unlabelled.append(mean)
+            continue
+        if round_id not in grouped:
+            grouped[round_id] = []
+            order.append(round_id)
+        grouped[round_id].append(mean)
+
+    means = [statistics.fmean(grouped[r]) for r in order]
+    for i in range(0, len(unlabelled), per_round):
+        chunk = unlabelled[i : i + per_round]
+        if chunk:
+            means.append(statistics.fmean(chunk))
+    return means
 
 
 def has_plateaued(

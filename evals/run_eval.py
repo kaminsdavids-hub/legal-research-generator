@@ -186,7 +186,7 @@ def main() -> int:
         print("!! HOLDOUT SET INCLUDED - final validation only, never optimization\n")
 
     status_by_cite, corpus_verified = _corpus_index(args.corpus)
-    report = RunReport(eval_set=eval_set.name)
+    report = RunReport(eval_set=eval_set.name, round_id=args.round_id)
     started = time.time()
 
     out_dir = Path(args.out)

@@ -61,7 +61,7 @@
     "retrieval_requirement": "every authority must come through the legal research tool call; responses may cite only retrieved sources",
     "secondary_source_discipline": "2026 news reporting on enforcement actions may frame a question but may not serve as legal authority; primary documents (Federal Register, slip opinions, U.S.C., C.F.R.) required for any proposition of law",
     "scoring_output": "per-question JSON {gates: pass/fail, scores: [5 x 1-10], judge_rationale}, aggregated per cluster and overall",
-    "plateau_rule": "mean overall score change < 0.5 across 3 consecutive optimization rounds. Raised from the originally specified 0.2 after measuring the noise floor: repeated runs of unchanged code moved by 0.087 to 0.219 depending on whether a citation gate flipped, and one flip costs about 0.24 on a 32-question mean.",
+    "plateau_rule": "A round is the average of 3 runs; the rule compares round means, not run means, and fires when the round mean moves < 0.2 across 3 consecutive rounds. Averaging restores the originally specified 0.2: a citation gate flip moves a single run's mean by about 0.24 but a 3-run round by only 0.08, and four different questions have flipped across four sets, so fixing them individually does not converge. Comparing single runs instead requires 0.5.",
     "holdout_discipline": "holdout questions are never shown to any optimization loop; use only for final validation"
   },
   "clusters": {

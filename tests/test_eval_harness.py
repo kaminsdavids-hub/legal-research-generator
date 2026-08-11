@@ -592,3 +592,47 @@ def test_judge_gives_up_cleanly_after_its_retries() -> None:
     v = judge_response(_AlwaysBad(), es.questions[0], _crux_turn(2))
     assert not v.parsed
     assert v.mean == 0.0
+
+
+def test_round_means_group_by_round_id() -> None:
+    from evals.harness import round_means
+
+    runs = [("r1", 6.9), ("r1", 6.8), ("r1", 6.7), ("r2", 6.5), ("r2", 6.6), ("r2", 6.4)]
+    assert round_means(runs) == pytest.approx([6.8, 6.5])
+
+
+def test_untagged_runs_are_chunked_in_order() -> None:
+    """Sets produced before round ids existed still group sensibly."""
+    from evals.harness import round_means
+
+    runs = [("", 6.9), ("", 6.8), ("", 6.7), ("", 6.5), ("", 6.6), ("", 6.4)]
+    assert round_means(runs, per_round=3) == pytest.approx([6.8, 6.5])
+
+
+def test_averaging_shrinks_a_gate_flip_below_the_threshold() -> None:
+    """The reason for rounds at all.
+
+    A flip moves a single run's mean by ~0.24, over the 0.2 threshold. Averaged
+    across three runs it moves the round by ~0.08, inside it.
+    """
+    from evals.harness import ROUND_PLATEAU_DELTA, round_means
+
+    clean = [("r1", 6.70), ("r1", 6.70), ("r1", 6.70)]
+    # Same round, but one run lost a question to a gate flip.
+    flipped = [("r2", 6.70), ("r2", 6.46), ("r2", 6.70)]
+    a, b = round_means(clean + flipped)
+    assert abs(b - a) == pytest.approx(0.08, abs=0.005)
+    assert abs(b - a) < ROUND_PLATEAU_DELTA
+
+    # The same flip judged run-by-run would breach it.
+    assert abs(6.70 - 6.46) > ROUND_PLATEAU_DELTA
+
+
+def test_a_real_regression_still_registers_across_rounds() -> None:
+    """Averaging must not blunt the signal the rule exists to catch."""
+    from evals.harness import ROUND_PLATEAU_DELTA, has_plateaued, round_means
+
+    runs = [("r1", 6.9), ("r1", 6.9), ("r1", 6.9), ("r2", 6.2), ("r2", 6.2), ("r2", 6.2)]
+    a, b = round_means(runs)
+    assert abs(b - a) > ROUND_PLATEAU_DELTA
+    assert not has_plateaued([a, b, 6.2, 6.2], delta=ROUND_PLATEAU_DELTA)
