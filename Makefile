@@ -54,7 +54,7 @@ test-dialectic:
 
 test-eval-harness:
 	python -m pytest tests/test_eval_harness.py tests/test_loop_harness.py \
-		tests/test_compare_scorers.py -q
+		tests/test_compare_scorers.py tests/test_fetch_opinion_text.py -q
 
 eval:
 	python evals/run_eval.py
