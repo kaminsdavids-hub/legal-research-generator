@@ -531,6 +531,64 @@ forever; that happened three times in the dialectic work (REMEDIATION §5, §11.
 separately testable assertion; it is listed here so a future change that hands a
 gate a rendered string is recognisable as a regression.
 
+### M12. Gap analysis reads structure, not prose
+
+Every gap in `socratic.analyse` is a property of the graph's shape: an objection
+with no reply, a claim nothing attacks, a node with no edges, a `DEPENDS_ON`
+cycle. This is the module's main defence. A critic that reads text to judge
+whether an argument is complete can be satisfied by confident writing — that is
+how three self-satisfying gates reached the dialectic work (REMEDIATION §5,
+§11.5, §11.11a). A missing reply edge cannot be written around.
+
+The engine does read node text, to quote a claim back to the author when
+phrasing a question. That is not the same failure: a question asserts nothing,
+and the author answers it. The failure is a *gate* whose pass depends on
+machine-authored prose, and there is none here.
+
+### M13. Asking is not answering
+
+A gap that has been asked about is skipped when choosing the next question, so
+the loop moves on instead of nagging — but it stays in `analyse` and in
+`AskedLog.outstanding`. A hole that vanishes from the report because it was
+mentioned once is the report lying. The log keys on `Gap.key`, not question
+text, so rewording a question does not make it new. Enforced by
+`test_an_asked_but_unanswered_gap_stays_visible`,
+`test_rewording_a_question_does_not_make_it_new` and
+`test_a_gaps_key_is_stable_across_passes`.
+
+### M14. The engine supplies pressure, not content
+
+It produces questions and never proposes a node. An optional `QuestionWriter`
+may reword a templated question, but a "question" that does not ask one is
+refused and the template stands — an assertion arriving through the question
+channel is content entering where only the author's may. A writer that raises
+costs the wording, not the question. Enforced by
+`test_a_writer_that_asserts_instead_of_asking_is_refused` and
+`test_a_broken_writer_costs_wording_not_the_question`.
+
+### M15. No question is manufactured to fill a quota
+
+With no unasked gaps, `ask` returns nothing. Inventing one would spend the
+author's attention on whatever the engine could think of rather than on a hole.
+Enforced by `test_no_gaps_means_no_question_rather_than_an_invented_one`.
+
+### M16. The worst hole is asked about first
+
+`PRIORITY` runs self-grounding → unanswered attack → unsupported claim →
+uncontested claim → orphan → unverified authority. A self-grounding argument is
+a defect no further material fixes; an unverified citation is last because it is
+the one gap the machine can sometimes close without asking anyone. A section
+whose novelty delta has collapsed is *deprioritised, not abandoned* — a cycle in
+a mined-out section still matters more than a stray citation somewhere fresh.
+Enforced by `test_the_worst_hole_is_asked_about_first` and
+`test_a_mined_out_section_is_deprioritised_not_abandoned`.
+
+### M17. Every gap the engine can find, it can ask about
+
+A gap kind with no question template is a silent dead end: found, reported,
+never surfaced. Enforced by `test_every_gap_kind_has_a_question`, which iterates
+`GapKind` rather than a hand-written list, so a new kind fails until it has one.
+
 ---
 
 ## Maieutic — Designed, not yet enforced
@@ -559,3 +617,20 @@ It swallows corpus-load and scorer-build failures by design, returning a
 fail-closed gate. Nothing exercises the settings-driven path, so a
 misconfiguration that silently produces a verifier-less gate would be visible
 only as every authority failing to merge.
+
+### D9. Question quality is unmeasured
+
+The gaps are structural and therefore real, but nothing establishes that the
+questions they produce are *good* ones — that an author answering them writes a
+better paper than one answering a generic prompt. The templates are
+deterministic and blunt by design; `QuestionWriter` exists so a model can do
+better, and no model has been run through it. Judging this needs an author, not
+a test.
+
+### D10. Gap coverage is a class, not a list
+
+`GapKind` covers the holes visible in the graph's current shape. An argument can
+fail in ways this shape cannot express — a premise that does not in fact support
+what it points at, a distinction without a difference, a section that argues the
+wrong question well. Those are semantic and would need a critic, with all the
+self-satisfaction risk that carries. Nothing here claims the list is complete.
