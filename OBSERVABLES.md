@@ -1159,3 +1159,42 @@ The independence check is the part worth keeping: `agrees_with_ceiling` reports
 how often the reranker picks the gate's own favourite, and ran at 0–1 of n. A
 future retrieval change that closes the gap *and* raises that number has not
 improved retrieval, it has aligned it with the gate.
+
+### M45. The learned policy reads the author, never the gates
+
+`learn.Episode` carries the gap kind, the outcome, the section and the answer's
+length — and nothing about whether the patch merged. Ranking questions by whether
+their answers passed the gates would have the machinery grade its own curriculum,
+which is §18's collapse one layer up and more tempting here because the verdicts
+are sitting in `StepResult`. A refused answer is recorded as ANSWERED: the author
+wrote a paragraph and the machinery rejected it, which is a fact about the gates.
+Declining is the only negative signal, because only the author can decide a
+question was not worth their time. Enforced by
+`test_a_refused_answer_still_counts_as_a_question_worth_asking`,
+`test_the_journal_records_nothing_about_gate_verdicts` (asserts the field set) and
+`test_declining_is_the_only_negative_signal`.
+
+### M46. Evidence nudges within a bound; the declared order dominates at distance
+
+An adjustment is capped at `MAX_SHIFT` positions. Adjacent kinds can swap on
+strong evidence — intended, since neighbouring priorities were close to a
+judgement call — but nothing travels further, so a `DEPENDS_ON` cycle the author
+keeps skipping still outranks an unverified citation they enjoy fixing. No kind
+is suppressed outright: one that stopped being asked could never earn its way
+back. Below `MIN_EVIDENCE` a kind is *unmeasured*, not unwanted — the §11.8
+distinction again. Enforced by `test_adjacent_kinds_can_swap_on_strong_evidence`,
+`test_evidence_cannot_travel_further_than_max_shift`,
+`test_the_adjustment_is_bounded_by_max_shift`,
+`test_no_kind_is_ever_suppressed_outright` and
+`test_engagement_is_unmeasured_below_the_evidence_floor`.
+
+### M47. The journal outlives the manuscript
+
+What is learned is a fact about the *author*, so it persists separately from the
+session. It also has to: an offline manuscript runs dry after two or three
+questions (D23), which is below the evidence floor for any single gap kind, so a
+per-manuscript journal could never accumulate enough to act on — a feature that
+would have shipped and never once activated. Enforced by
+`test_evidence_accumulates_across_manuscripts`, which drives three manuscripts
+through the CLI and asserts engagement becomes measurable, and by
+`test_the_journal_persists_separately_from_the_manuscript`.

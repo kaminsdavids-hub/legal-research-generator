@@ -50,7 +50,7 @@ test-dialectic:
 		tests/test_maieutic_service.py tests/test_maieutic_socratic.py \
 		tests/test_maieutic_adapter.py tests/test_maieutic_coherence.py \
 		tests/test_maieutic_banality.py tests/test_maieutic_render.py \
-		tests/test_maieutic_loop.py -v
+		tests/test_maieutic_loop.py tests/test_maieutic_learn.py -v
 
 test-eval-harness:
 	python -m pytest tests/test_eval_harness.py tests/test_loop_harness.py \

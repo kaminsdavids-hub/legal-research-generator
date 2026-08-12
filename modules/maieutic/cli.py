@@ -17,11 +17,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .learn import Journal
 from .loop import GateReport, Gates, Session, StepResult, TurnProvider
 from .render import Audience
 from .socratic import SocraticEngine
 
 DEFAULT_STATE = Path(".maieutic/session.json")
+#: Separate from the session on purpose: evidence about which questions are worth
+#: asking accumulates across manuscripts, and one manuscript never supplies enough.
+DEFAULT_JOURNAL = Path(".maieutic/journal.json")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_STATE,
         help=f"session file (default: {DEFAULT_STATE})",
+    )
+    parser.add_argument(
+        "--journal",
+        type=Path,
+        default=DEFAULT_JOURNAL,
+        help=f"question-history file, shared across manuscripts (default: {DEFAULT_JOURNAL})",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -62,7 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--rounds", type=int, default=0, help="stop after N rounds (0 = until done)"
     )
 
+    sub.add_parser("skip", help="pass on the pending question")
+
     sub.add_parser("status", help="gaps, open problems and what is outstanding")
+
+    sub.add_parser(
+        "policy", help="what the loop has learned about which questions you answer"
+    )
 
     show = sub.add_parser("render", help="print the manuscript")
     show.add_argument(
@@ -76,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     session = Session.load(args.state)
+    session.journal = Journal.load(args.journal)
     engine = SocraticEngine()
     # The gates must match the exchange: a live run produces authorities, and
     # offline gates have no verifier to confirm them. See REMEDIATION 12.2.
@@ -101,6 +118,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "cycle":
         return _cycle(session, engine, gates, args)
 
+    elif args.command == "skip":
+        question = session.decline()
+        if question is None:
+            print("No question is pending.")
+        else:
+            print("Skipped. It stays an open gap; you will not be asked again.")
+            _ask(session, engine)
+
+    elif args.command == "policy":
+        _policy(session)
+
     elif args.command == "status":
         _status(session)
 
@@ -113,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     session.save(args.state)
+    session.journal.save(args.journal)
     return 0
 
 
@@ -157,9 +186,13 @@ def _cycle(
         except EOFError:
             break
         if not text.strip():
+            # Leaving is not the same as passing, so the blank line ends the
+            # session without recording an opinion about the question. `skip`
+            # is how the author says this one was not worth answering.
             break
 
         _report(session.answer(text, gates, turns))
+        session.journal.save(args.journal)
         # Saved every round. A crash mid-session must not cost the author the
         # answers they already gave.
         session.save(args.state)
@@ -216,6 +249,23 @@ def _report(result: StepResult) -> None:
 def _advise(report: GateReport) -> None:
     for advisory in report.advisories:
         print(f"  advisory — {advisory}")
+
+
+def _policy(session: Session) -> None:
+    from .learn import LearnedPolicy
+
+    rows = session.journal.summary()
+    if not rows:
+        print("Nothing asked yet, so nothing learned.")
+        return
+    print("What you did with the questions so far:\n")
+    for line in LearnedPolicy(session.journal).explain():
+        print(f"  {line}")
+    print(
+        "\nEngagement is measured from whether you answered, never from whether "
+        "the gates accepted it: an answer they refused is still a question worth "
+        "having asked."
+    )
 
 
 def _status(session: Session) -> None:

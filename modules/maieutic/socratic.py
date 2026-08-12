@@ -26,6 +26,7 @@ being a hole because someone mentioned it once.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
@@ -302,8 +303,16 @@ class AskedLog:
 class SocraticEngine:
     """Chooses what to ask next, and words it."""
 
-    def __init__(self, writer: QuestionWriter | None = None) -> None:
+    def __init__(
+        self,
+        writer: QuestionWriter | None = None,
+        rank: Callable[[GapKind], float] | None = None,
+    ) -> None:
         self.writer = writer
+        # How gap kinds are ordered. Defaults to the declared PRIORITY; a
+        # learned policy supplies its own (see modules.maieutic.learn). Injected
+        # rather than imported so this module stays free of the learning code.
+        self.rank = rank or (lambda kind: float(PRIORITY.index(kind)))
 
     def ask(
         self,
@@ -328,7 +337,7 @@ class SocraticEngine:
         # since a self-grounding cycle in a mined-out section still matters more
         # than an unverified citation somewhere fresh.
         candidates.sort(
-            key=lambda g: (g.section in avoid_sections, PRIORITY.index(g.kind))
+            key=lambda g: (g.section in avoid_sections, self.rank(g.kind))
         )
         return [self.phrase(g, graph) for g in candidates[:limit]]
 

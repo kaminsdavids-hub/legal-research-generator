@@ -1657,3 +1657,38 @@ the independence check built in. No production retriever changes. The headroom
 found in §18 is real and remains open; three candidate closures — the gate's own
 scorer (§18), prompt framing (§15), and now independent-signal reranking — have
 each been tried and rejected on evidence.
+
+---
+
+## 20. `learn/`: the journal was in the wrong place
+
+The learned question policy was built with the journal on `Session`, alongside
+the graph and the asked-log. It passed its tests. Driving it through the CLI
+showed the policy reporting "not enough evidence yet" for every gap kind after a
+full session, and it would have done so forever.
+
+**Cause.** `MIN_EVIDENCE` is 3 episodes per gap kind, and D23 already measured
+that an offline manuscript runs dry after two or three questions *in total*. A
+per-manuscript journal therefore cannot reach the floor for any kind. The policy
+would have shipped, been wired in, passed every test, and never once adjusted
+anything.
+
+This is §12.1's shape — a component unreachable in the running system — caught
+this time before commit rather than after, and only because the demonstration was
+run rather than assumed.
+
+**Fix.** The journal persists to its own file, shared across manuscripts, because
+what is being learned is a property of the author and not of one paper. That was
+a modelling error as much as a reachability bug: the journal was never manuscript
+state. `Session.to_dict` no longer carries it. A test drives three manuscripts
+through the CLI and asserts engagement becomes measurable, so the reachability is
+pinned rather than argued.
+
+**A docstring corrected in the same pass.** It claimed a structural defect could
+not be demoted below a stylistic gap. The bound makes that true of *demotion*,
+but a neighbour being *promoted* can still overtake — and the first live
+demonstration showed exactly that, `unanswered_attack` rising to −0.50 past
+`self_grounding` at 0. The real property is that nothing travels further than
+`MAX_SHIFT`, so the declared order dominates at any distance greater than the
+bound while adjacent kinds may swap. The prose now says that, and two tests pin
+both halves.

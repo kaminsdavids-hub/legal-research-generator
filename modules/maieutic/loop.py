@@ -31,6 +31,7 @@ from .coherence import CoherenceGate, PatchCoherence
 from .dialectic_adapter import Adaptation, adapt
 from .graph import ArgumentGraph, GraphPatch, Node, NodeType, Provenance
 from .grounding import GroundingGate, PatchGrounding
+from .learn import Journal, LearnedPolicy, Outcome, gap_episode
 from .novelty import LexicalEmbedder, NoveltyGate, PatchNovelty
 from .render import Audience, Manuscript, render
 from .socratic import AskedLog, Gap, GapKind, Phrasing, Question, SocraticEngine, analyse
@@ -176,6 +177,11 @@ class Session:
     barren: set[str] = field(default_factory=set)
     #: The question awaiting an answer, so `ask` and `answer` cannot disagree.
     pending: Question | None = None
+    #: What the author did with the questions they were asked. Read only by the
+    #: learned policy, and never by the gates. Held here but persisted
+    #: separately: it is a fact about the author, not about this manuscript, and
+    #: one manuscript cannot supply enough evidence to act on.
+    journal: Journal = field(default_factory=Journal)
 
     # ------------------------------------------------------------------ #
     # The loop
@@ -190,7 +196,7 @@ class Session:
 
     def ask(self, engine: SocraticEngine | None = None) -> Question | None:
         """The next question, or None when there is no unasked gap left."""
-        engine = engine or SocraticEngine()
+        engine = engine or SocraticEngine(rank=LearnedPolicy(self.journal).rank)
         questions = engine.ask(
             self.graph, self.asked, limit=1, avoid_sections=frozenset(self.barren)
         )
@@ -244,16 +250,40 @@ class Session:
         if not report.passed:
             # The question stays pending. A refused patch means the author has
             # not yet answered, not that the gap has been dealt with.
+            #
+            # The episode is still recorded as ANSWERED: they wrote a paragraph
+            # and the machinery rejected it, which is a fact about the gates and
+            # not about whether the question was worth asking.
+            self.journal.record(gap_episode(question.gap, Outcome.ANSWERED, text))
             return result
 
         # `patch`, not `adaptation.patch`: the reduced one is what the gates
         # judged, and merging anything else means merging something unjudged.
+        # Recorded before the merge, and regardless of it: the author answered,
+        # which is the only thing this journal is about.
+        self.journal.record(gap_episode(question.gap, Outcome.ANSWERED, text))
         result.added = self.graph.apply(patch)
         result.merged = True
         self.asked.record(question)
         self.barren |= report.banality.barren_sections()
         self.pending = None
         return result
+
+    def decline(self) -> Question | None:
+        """The author passes on the pending question.
+
+        The only negative signal the learned policy gets, and the reason it
+        exists: without a decline path a skipped question is indistinguishable
+        from one never reached, and the policy would learn nothing from the
+        questions that were not worth asking.
+        """
+        question = self.pending
+        if question is None:
+            return None
+        self.journal.record(gap_episode(question.gap, Outcome.DECLINED))
+        self.asked.record(question)
+        self.pending = None
+        return question
 
     # ------------------------------------------------------------------ #
     # Reporting
