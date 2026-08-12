@@ -1038,15 +1038,15 @@ fixture format carries a `source` field on every session and the reports print
 it, so a run over stand-ins and a run over a real transcript are never silently
 compared.
 
-### D23. Offline, the loop is only two questions deep
+### D23. Depth is a function of the machine's pressure — measured both ways
 
-Measured, not designed: `make loop-eval` reports both fixture sessions running
-dry after two exchanges, with three of five and two of four answers unused. The
-gap sequence offline is fixed — an uncontested thesis, then the unanswered attack
-the author's own answer created — and then there is nothing left to ask. **The
-loop's depth is almost entirely a function of the machine's pressure**, because
-objections are what create further gaps. Whether the live loop sustains depth
-across a whole paper is the measurement the harness now exists to take.
+Offline, both fixture sessions run dry after two exchanges, with three of five
+and two of four answers unused. The offline gap sequence is fixed: an uncontested
+thesis, then the unanswered attack the author's own answer created, then nothing.
+
+Live, neither session ran dry — all four and all five answers were used, because
+each exchange's objections create the next round's gaps. The mechanism is
+confirmed in both directions. See §13 for the run.
 
 ### D24. Two gate weaknesses the first run made concrete
 
@@ -1064,3 +1064,37 @@ observations.
   entailment critic configured offline — is admitted as unadjudicated. This is
   D6 and the soft-band rule interacting, and it is the strongest argument yet
   for calibrating those thresholds against real data.
+
+### D25. Almost no machine-proposed authority survives grounding
+
+**1 of 19** across the first two live sessions (S2: 1/14, S1: 0/5). The
+manuscripts the loop produced carry objections and premises but essentially no
+verified authority. Three explanations are live and this run does not separate
+them: the models may be citing badly; the support scorer is `LexicalSupportScorer`
+with a 0.34 cut, and lexical overlap is a crude proxy for whether a passage
+supports a claim; and the corpus is 41 records. **D7 is the experiment that would
+tell them apart** — the embedding and NLI scorers have never been run through
+this path. Until that is done, nothing here says whether the fabrication wall is
+working well or merely working.
+
+### D26. The loop generates open problems faster than it closes them
+
+S1: 13 machine objections over 5 answers, 5 of them answered, **10 open problems**
+in the rendered manuscript. Each answer closes one attack and provokes two or
+three more. The author falls steadily behind, by construction — the Socratic
+policy always offers the oldest unanswered attack, and the exchange always adds
+new ones. Whether that is productive pressure or an unfinishable treadmill is a
+question for someone using it, and it is the strongest reason to want a real
+author's transcript rather than more fixture runs.
+
+### D27. The advisory limbs are dark even in live mode
+
+Every live exchange reported zero advisories, because `Gates.live` wires the
+grounding verifier and the banality corpus but **no entailment critic**. So the
+novelty soft band stays unadjudicated and coherence's semantic checks never run,
+in exactly the mode where a real NLI model is available. Given D24 — a
+near-verbatim restatement admitted through the soft band — this is a concrete,
+small gap: the dialectic engine already builds an NLI client, and `Gates.live`
+could pass it to `NoveltyGate` and `CoherenceGate`. Recording it rather than
+fixing it blind, because the change alters what merges and would need
+re-measuring against these numbers to mean anything.

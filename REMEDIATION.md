@@ -1251,3 +1251,40 @@ and all found within minutes of assembling the pieces. §12.1 was a gate nothing
 routed to; §12.2 was two halves configured apart; §12.3 was an invariant that was
 right in isolation and wrong in composition. None of them were reachable by
 testing a component against its own idea of its interface.
+
+---
+
+## 13. First live measurement of the loop
+
+`python evals/run_loop_eval.py --live`, two fixture sessions, four local models
+(saul:7b-instruct-v1 / llama3.1:8b / gemma3:4b / nemotron-3-nano:4b), corpus
+`data/corpus/openweights.jsonl`. Answers are stand-ins, not a real author's
+(OBSERVABLES D22).
+
+| | S2-expressive-conduct | S1-export-control |
+|---|---|---|
+| exchanges | 4 | 5 |
+| ran dry | no | no |
+| answer survival | 100% | 100% |
+| machine objections | 5 | 13 |
+| objections per exchange | 1.25 | 2.60 |
+| authorities grounded | 1 / 14 | 0 / 5 |
+| nodes in manuscript | 13 | 30 |
+| open problems | 3 | 10 |
+| wall time | 944s | 1469s |
+
+**What went right.** Answer survival is 100%, where before §12.3 every live
+exchange scored 0. The citation channel recorded **zero** boundary refusals
+across nine live exchanges — the dialectic module's central invariant held
+without exception on real model output. Novelty delta stayed high (0.67–1.00),
+so the machine's contributions were genuinely new to the manuscript rather than
+restatement.
+
+**What the numbers expose.** Authority survival of 1/19 (D25) and open problems
+accumulating faster than they are closed (D26) are both first-class findings, and
+neither was visible from any component test. The advisory limbs reported nothing
+at all, because `Gates.live` never wires an entailment critic (D27).
+
+**Cost.** Roughly four to five minutes per answer on this hardware — 236s and
+294s per exchange respectively. A ten-answer session is an hour. That is a
+constraint on how the loop can be used, not an implementation detail.
