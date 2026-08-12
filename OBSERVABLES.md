@@ -589,6 +589,66 @@ A gap kind with no question template is a silent dead end: found, reported,
 never surfaced. Enforced by `test_every_gap_kind_has_a_question`, which iterates
 `GapKind` rather than a hand-written list, so a new kind fails until it has one.
 
+### M18. The author's answer is the only human node
+
+It is captured verbatim; everything the exchange contributed carries
+`Provenance.DIALECTIC`. `Node.propose` refuses HUMAN outright, so this is a
+guarantee rather than a convention. An empty answer is the author declining the
+question and raises `AnswerRefused` — it is recorded as unanswered, not merged as
+nothing. Enforced by `test_the_answer_is_captured_verbatim_and_is_human`,
+`test_nothing_the_machine_contributed_claims_human_provenance` and
+`test_an_empty_answer_is_declining_the_question_not_an_insertion`.
+
+### M19. The synthesis never enters the manuscript
+
+Thesis and antithesis material is pressure — support the author may accept,
+objections they must answer. The synthesis is the machine writing the paper's
+conclusion, which is the one thing this system exists not to do. It is returned
+alongside the patch as material for choosing the next question, never merged.
+Enforced by `test_the_synthesis_never_enters_the_manuscript`.
+
+### M20. Authority is not created at the adapter
+
+Only a slot the dialectic module actually verified becomes an AUTHORITY node,
+and it arrives with `verified=False`: CourtListener answered whether the citation
+*resolves*, and the grounding gate asks whether the source supports *this claim*,
+which is a different question. A `proposed` candidate enters as a plain premise
+carrying no citation, so an unconfirmed cite cannot be read off the manuscript as
+a real one. Enforced by
+`test_an_authority_arrives_unverified_for_the_grounding_gate_to_judge` and
+`test_a_retrieved_candidate_is_not_authority`.
+
+### M21. Refusals at the boundary are recorded, never silent
+
+A proposition carrying a citation string is refused (defence in depth — the
+engine already voids such a turn), and so is a verified but `NOT CURRENTLY
+OPERATIVE` authority, because `Node` has no note field and the warning cannot
+travel with it. Merging that one would let a repealed rule render as clean
+authority, which is precisely what the marker exists to prevent. A proposition
+that vanished without a record is indistinguishable from one the model never
+produced. Enforced by `test_a_proposition_carrying_a_citation_string_is_refused`,
+`test_a_rescinded_authority_is_refused_rather_than_rendered_clean` and
+`test_a_refusal_is_recorded_not_silent`.
+
+### M22. A reply attaches to the objection, not to what it attacked
+
+`unanswered_attacks` looks for a REPLY pointing at the OBJECTION. Attaching
+anywhere else leaves every answered attack reading as open forever — the same
+wrong-edge-end error the graph work already made once. Enforced by
+`test_a_reply_attaches_to_the_objection_not_to_what_it_attacked`, which asserts
+on `unanswered_attacks()` going empty rather than on edge shape.
+
+### M23. Every gap kind can absorb an answer, and one that cannot be closed says so
+
+`_ROLES` is complete over `GapKind`, so no question goes nowhere; the test
+iterates the enum rather than a hand-written list. `SELF_GROUNDING` and
+`UNVERIFIED_AUTHORITY` are marked `unresolved`, because closing them means
+removing an edge or re-running retrieval and a patch only adds. The gap is still
+open after the answer, and the report says so rather than treating a question as
+resolved by having been answered. Enforced by
+`test_every_gap_kind_can_absorb_an_answer` and
+`test_a_gap_needing_an_edit_says_the_answer_did_not_close_it`.
+
 ---
 
 ## Maieutic — Designed, not yet enforced
@@ -634,3 +694,22 @@ fail in ways this shape cannot express — a premise that does not in fact suppo
 what it points at, a distinction without a difference, a section that argues the
 wrong question well. Those are semantic and would need a critic, with all the
 self-satisfaction risk that carries. Nothing here claims the list is complete.
+
+### D11. The adapter has never seen a live dialectic turn
+
+Every `DialecticTurn` in `tests/test_maieutic_adapter.py` is hand-built. The
+adapter reads the real pydantic models, so a schema change breaks the tests —
+but nothing shows what a real exchange's propositions look like once they are
+nodes: how many survive the gates, whether the antithesis produces objections an
+author finds worth answering, or how much of a turn is refused at the boundary in
+practice. Running one is the next real measurement this module needs.
+
+### D12. The answer's node type comes from the gap, not from the answer
+
+An author asked for the strongest objection to their claim gets whatever they
+write typed as an `OBJECTION` attacking it, even if they in fact wrote further
+support. The graph then carries a wrong edge, and no gate catches it: grounding
+checks that support exists, not that an ATTACKS edge really attacks. Classifying
+the answer instead of the question would need a critic reading the author's
+prose, with the self-satisfaction risk that carries; the alternative is letting
+the author set the type, which is a UI decision not yet made.
