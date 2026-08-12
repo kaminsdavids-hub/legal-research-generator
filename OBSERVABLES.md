@@ -1,10 +1,10 @@
-# Dialectic Module — Observable Rules
+# Dialectic and Maieutic Modules — Observable Rules
 
-This file records the rules governing `modules/dialectic/`, split into two
-sections:
+This file records the rules governing `modules/dialectic/` and
+`modules/maieutic/`, split into two sections:
 
-* **Enforced** — the code implements the rule and a named test in
-  `tests/test_dialectic.py` fails if it stops holding.
+* **Enforced** — the code implements the rule and a named test fails if it stops
+  holding.
 * **Designed, not yet enforced** — the rule is the intended behaviour, but
   nothing in the test suite would catch a regression.
 
@@ -421,8 +421,141 @@ offline `StubCiteRetriever` is covered by tests; the corpus-backed adapter has n
 test, because exercising it needs a corpus fixture with complete
 volume/reporter/page records.
 
+Still open. The maieutic module's own corpus adapter *is* now covered (rule M8),
+and the duck-typed record fixture in `tests/test_maieutic_service.py` is the
+fixture this rule says is missing — but it covers `CorpusCitationVerifier`, a
+different class. `_CorpusCiteRetriever` remains untested.
+
 ### D5. Daily rate budget across restarts
 
 Rule 4's 125/day cap is process-local by decision, not accident. If it ever has
 to hold across restarts it needs a persistent store keyed on wall time. Nothing
 tests or enforces the durable interpretation.
+
+---
+
+## Maieutic — Enforced
+
+Rules governing `modules/maieutic/`. Tests live in `tests/test_maieutic_graph.py`,
+`tests/test_maieutic_novelty.py`, `tests/test_maieutic_grounding.py` and
+`tests/test_maieutic_service.py`.
+
+### M1. Provenance is carried, not inferred
+
+Every node records whether a model proposed it, a human wrote it, or a human
+edited a proposal. `Node.propose` cannot produce a human-provenance node and
+`as_verified` is the grounding gate's call alone. Enforced by
+`test_provenance_cannot_be_forged` and `test_a_generator_cannot_hand_over_a_pre_verified_authority`.
+
+### M2. A patch must add something
+
+`GraphPatch` refuses construction with no nodes. An insertion asserting nothing
+new is a restatement, and the cheapest place to say so is the constructor.
+Enforced by `test_an_empty_patch_is_refused`.
+
+### M3. Novelty has three bands, and the middle one is adjudicated
+
+Above `HARD` (0.92) a candidate is a restatement outright; below `SOFT_LOW`
+(0.70) it is novel on its face; between them an entailment critic decides,
+because different words are not a contribution if the graph already entails
+them. Enforced by `test_in_the_soft_band_entailment_decides_not_wording`.
+
+**Both thresholds are PROVISIONAL** — see D6 below.
+
+### M4. A degraded novelty gate is legible
+
+Without real embeddings the gate falls back to lexical overlap, which cannot see
+a paraphrase — the exact failure it exists to catch. Every verdict records the
+`Method` that produced it, and the soft band without a critic admits the
+question was unadjudicated rather than guessing. Enforced by
+`test_every_verdict_records_the_method_that_produced_it` and
+`test_the_soft_band_without_a_critic_admits_but_says_so`.
+
+### M5. Novelty passes on partial contribution; grounding does not
+
+A patch survives novelty if **anything** in it is new, but fails grounding if
+**anything** in it is ungrounded. The asymmetry is deliberate: a restatement
+beside a real contribution is merely redundant, whereas one fabricated claim
+beside verified material is where an unsupported claim does the most damage.
+Enforced by `test_a_patch_cannot_smuggle_a_restatement_beside_something_new` and
+`test_grounding_is_all_or_nothing_across_a_patch`.
+
+### M6. Every node is verified-cited or explicitly argued — there is no third category
+
+AUTHORITY nodes fabricate, so a citation must resolve through retrieval *and*
+support the claim made of it; resolving is necessary and not sufficient. ORIGINAL
+nodes float, so they need no citation but do need an argument subgraph. Requiring
+citations of ORIGINAL nodes would push the author toward saying only what someone
+else has already said, which is the opposite of what the loop is for. Enforced by
+`test_a_real_case_cited_for_something_it_does_not_say_fails`,
+`test_an_original_node_asserted_alone_cannot_merge` and
+`test_an_original_node_needs_no_citation`.
+
+### M7. The grounding gate fails closed
+
+With no verifier configured, an AUTHORITY node does not merge. This is the
+fabrication wall; a gate that waves authority through when its checker is absent
+is worse than no gate, because it reports a pass. Enforced by
+`test_without_a_verifier_an_authority_fails_closed` and
+`test_a_broken_scorer_is_a_failure_not_a_pass`.
+
+### M8. Support is scored per passage, against the scorer's own threshold
+
+`SupportScorer.score` takes one passage at a time, and the best-supporting
+passage decides. The threshold comes from the scorer, never from the gate:
+lexical overlap and NLI entailment probabilities are not on comparable scales,
+so a cut chosen here would be wrong for at least one of them. Enforced by
+`test_the_scorer_is_called_with_one_passage_at_a_time` and
+`test_the_threshold_comes_from_the_scorer_not_from_us`.
+
+### M9. Non-case authority resolves without CourtListener
+
+CourtListener indexes case law and cannot adjudicate a C.F.R. section however
+correct it is. Sending one there poisoned the all-or-nothing cite cache and
+invalidated three eval runs (REMEDIATION §11.9a). The corpus alone resolves
+non-case authority. Enforced by `test_non_case_authority_resolves_without_courtlistener`.
+
+### M10. Nothing passes by vacuous truth
+
+`all([])` is True, and that reading once reported crashed eval questions as
+passing both gates (REMEDIATION §11.9). A patch that assessed nothing does not
+read as assessed. Enforced by
+`test_a_patch_that_grounds_nothing_does_not_pass_by_vacuous_truth`.
+
+### M11. No gate reads text the machinery wrote
+
+Both gates read node text only — never notes, annotations or synthesis prose. A
+critic reading its own system's output validates itself and reports a pass
+forever; that happened three times in the dialectic work (REMEDIATION §5, §11.5,
+§11.11a). This is a structural property of what the gates are passed, not a
+separately testable assertion; it is listed here so a future change that hands a
+gate a rendered string is recognisable as a regression.
+
+---
+
+## Maieutic — Designed, not yet enforced
+
+### D6. Novelty thresholds are uncalibrated
+
+`HARD = 0.92` and `SOFT_LOW = 0.70` were chosen by judgement, not measurement.
+The dialectic module's independence thresholds were set by scoring two real
+populations and putting the cut in the gap between them (REMEDIATION §10.3);
+these have had no such calibration, because no corpus of accepted-versus-rejected
+manuscript nodes exists yet. Tests pin the *bands' behaviour* using a stub
+embedder with exact vectors, so they will keep passing whatever the numbers are.
+Calibrate before trusting a merge decision to them.
+
+### D7. Grounding against the real support scorer
+
+`tests/test_maieutic_service.py` exercises `CorpusCitationVerifier` against a
+fake scorer that mirrors the real signature. The real `EmbeddingSupportScorer`
+and `NliSupportScorer` need the GPU extra and have never been run through this
+path. A signature drift in `legal_research.citations.support` would be caught;
+a semantic mismatch in what the scorer considers support would not.
+
+### D8. `build_grounding_gate` has no test
+
+It swallows corpus-load and scorer-build failures by design, returning a
+fail-closed gate. Nothing exercises the settings-driven path, so a
+misconfiguration that silently produces a verifier-less gate would be visible
+only as every authority failing to merge.
