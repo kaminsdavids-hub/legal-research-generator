@@ -17,6 +17,13 @@ that accepts a node, a patch, or a provenance — a client that could post
 machine-drafted text as human-authored would defeat the record the whole system
 keeps, and no amount of care at the UI layer would restore it.
 
+**A live answer is a job, not a request.** A live exchange measured 236–294
+seconds (REMEDIATION §13), and a synchronous endpoint that blocks for five
+minutes is not something a browser or a proxy will hold. So when a turn provider
+is configured, `POST /answer` accepts the answer, returns 202 with a job, and the
+client polls. Offline the exchange is instant and the same endpoint answers
+synchronously — the client is told which it got rather than having to guess.
+
 **Refusals are part of the response, not an error.** A patch the gates decline
 returns 200 with the reasons: the author asked a question and got an answer about
 their work, which is a successful interaction whatever the merge decided. Sending
@@ -25,13 +32,16 @@ a 4xx would tell the client something went wrong, and nothing did.
 
 from __future__ import annotations
 
+import os
 import re
+import threading
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .learn import Journal, LearnedPolicy
@@ -69,6 +79,22 @@ class StepOut(BaseModel):
     #: The gap needs an edit rather than an addition, so the answer did not close it.
     unresolved: bool = False
     next_question: QuestionOut | None = None
+
+
+class JobOut(BaseModel):
+    """A live exchange in flight, or its result."""
+
+    state: str  # running | done | failed
+    result: StepOut | None = None
+    error: str = ""
+
+
+@dataclass
+class _Job:
+    state: str = "running"
+    result: StepOut | None = None
+    error: str = ""
+    thread: threading.Thread | None = field(default=None, repr=False)
 
 
 class StatusOut(BaseModel):
@@ -114,6 +140,10 @@ def create_app(
     app = FastAPI(title="maieutic loop", version="0.1.0")
     root.mkdir(parents=True, exist_ok=True)
     journal_path = root / "journal.json"
+    #: One in-flight exchange per session. Two answers to one question would
+    #: race on the session file and on which one the author meant.
+    jobs: dict[str, _Job] = {}
+    jobs_lock = threading.Lock()
 
     def path_for(session_id: str) -> Path:
         if not SESSION_ID.match(session_id):
@@ -151,16 +181,51 @@ def create_app(
     def status(session_id: str) -> StatusOut:
         return _status(session_id, load(session_id))
 
-    @app.post("/api/sessions/{session_id}/answer", response_model=StepOut)
-    def answer(session_id: str, request: AnswerRequest) -> StepOut:
+    def run_answer(session_id: str, text: str) -> StepOut:
         session = load(session_id)
         if session.pending is None and session.ask() is None:
             raise HTTPException(status_code=409, detail="no question is pending")
-        result = session.answer(request.text, gates or Gates.offline(), turns)
+        result = session.answer(text, gates or Gates.offline(), turns)
         if result.merged:
             session.ask()
         persist(session_id, session)
         return _step_out(session, result)
+
+    @app.post("/api/sessions/{session_id}/answer")
+    def answer(session_id: str, request: AnswerRequest) -> Any:
+        load(session_id)  # 400/404 before any work is started
+        if turns is None:
+            # Offline the exchange is instant, so there is nothing to poll for.
+            return run_answer(session_id, request.text)
+
+        with jobs_lock:
+            running = jobs.get(session_id)
+            if running is not None and running.state == "running":
+                raise HTTPException(
+                    status_code=409, detail="an exchange is already running"
+                )
+            job = _Job()
+            jobs[session_id] = job
+
+        def work() -> None:
+            try:
+                job.result = run_answer(session_id, request.text)
+                job.state = "done"
+            except Exception as exc:  # noqa: BLE001 - the client must be told
+                job.error = f"{type(exc).__name__}: {exc}"
+                job.state = "failed"
+
+        job.thread = threading.Thread(target=work, daemon=True)
+        job.thread.start()
+        return JSONResponse(status_code=202, content={"state": "running"})
+
+    @app.get("/api/sessions/{session_id}/answer", response_model=JobOut)
+    def answer_status(session_id: str) -> JobOut:
+        path_for(session_id)  # validate before touching the job table
+        job = jobs.get(session_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="no exchange for this session")
+        return JobOut(state=job.state, result=job.result, error=job.error)
 
     @app.post("/api/sessions/{session_id}/skip", response_model=StatusOut)
     def skip(session_id: str) -> StatusOut:
@@ -256,11 +321,26 @@ async function begin(){
     body:JSON.stringify({thesis})});
   sid=s.session_id;$('start').hidden=true;$('loop').hidden=false;showQuestion(s.pending);refresh();
 }
+async function poll(){
+  // A live exchange runs for minutes; the page says so rather than appearing hung.
+  for(;;){
+    await new Promise(r=>setTimeout(r,3000));
+    const j=await api(`/api/sessions/${sid}/answer`);
+    if(j.state==='done')return j.result;
+    if(j.state==='failed')throw new Error(j.error);
+    $('out').innerHTML='<p class="note">The two sides are arguing your answer. This takes a few minutes.</p>';
+  }
+}
 async function answer(){
   const text=$('answer').value.trim(); if(!text)return;
   let r;
-  try{ r=await api(`/api/sessions/${sid}/answer`,{method:'POST',
-    headers:{'content-type':'application/json'},body:JSON.stringify({text})}) }
+  try{
+    const res=await fetch(`/api/sessions/${sid}/answer`,{method:'POST',
+      headers:{'content-type':'application/json'},body:JSON.stringify({text})});
+    if(res.status===202){ r=await poll() }
+    else if(!res.ok){ const e=await res.json().catch(()=>({detail:res.statusText})); throw new Error(e.detail) }
+    else { r=await res.json() }
+  }
   catch(e){ $('out').innerHTML=`<p class="refused">${e.message}</p>`; return }
   let html = r.merged ? `<p>Merged: ${r.added} node(s).</p>`
                       : `<p class="refused">Not merged. The question stays open.</p>`;
@@ -280,5 +360,23 @@ async function refresh(){const m=await api(`/api/sessions/${sid}/manuscript`);$(
 
 
 def _app() -> FastAPI:  # pragma: no cover - the uvicorn entry point
-    """Factory for `make maieutic-web`. Sessions live under `.maieutic/`."""
-    return create_app(Path(".maieutic"))
+    """Factory for `make maieutic-web`. Sessions live under `.maieutic/`.
+
+    `MAIEUTIC_LIVE=1` wires the real dialectic engine and the gates that can
+    confirm what it produces. The two are selected together, because a live run
+    behind offline gates refuses every authority for want of a verifier
+    (REMEDIATION §12.2).
+    """
+    if os.environ.get("MAIEUTIC_LIVE") != "1":
+        return create_app(Path(".maieutic"))
+
+    from legal_research.config import get_settings
+
+    from .service import build_turn_provider
+
+    settings = get_settings()
+    return create_app(
+        Path(".maieutic"),
+        gates=Gates.live(settings),
+        turns=build_turn_provider(settings),
+    )

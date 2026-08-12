@@ -207,3 +207,112 @@ def test_the_page_is_self_contained(client: TestClient) -> None:
     assert "<title>maieutic</title>" in body
     assert "src=" not in body, "no external scripts"
     assert "http://" not in body and "https://" not in body
+
+
+# --------------------------------------------------------------------------- #
+# A live answer is a job, not a request
+# --------------------------------------------------------------------------- #
+def _slow_turn(delay: float = 0.3):  # type: ignore[no-untyped-def]
+    """Stands in for a real exchange, which measured 236-294s (§13)."""
+    import time
+
+    from modules.dialectic.models import CitationSlot, DialecticTurn, Position
+
+    def provide(question: str, answer: str) -> DialecticTurn:
+        time.sleep(delay)
+        return DialecticTurn(
+            question=question,
+            thesis=Position(
+                side="thesis", model="a", family="fa",
+                propositions=[CitationSlot(proposition="A supporting point.")],
+            ),
+            antithesis=Position(
+                side="antithesis", model="b", family="fb",
+                propositions=[CitationSlot(proposition="A counter-point.")],
+            ),
+        )
+
+    return provide
+
+
+def _live_client(tmp_path: Path, provider=None) -> TestClient:  # type: ignore[no-untyped-def]
+    return TestClient(create_app(tmp_path, turns=provider or _slow_turn()))
+
+
+def _await_job(client: TestClient, session_id: str) -> dict:  # type: ignore[type-arg]
+    import time
+
+    for _ in range(100):
+        body = client.get(f"/api/sessions/{session_id}/answer").json()
+        if body["state"] != "running":
+            return body
+        time.sleep(0.05)
+    raise AssertionError("job never finished")
+
+
+def test_a_live_answer_returns_202_rather_than_blocking(tmp_path: Path) -> None:
+    """A synchronous endpoint that blocks for five minutes is not something a
+    browser or a proxy will hold.
+    """
+    client = _live_client(tmp_path)
+    session_id = _begin(client)
+    response = client.post(f"/api/sessions/{session_id}/answer", json={"text": ANSWER})
+    assert response.status_code == 202
+    assert response.json()["state"] == "running"
+
+
+def test_the_job_carries_the_same_result_a_sync_call_would(tmp_path: Path) -> None:
+    client = _live_client(tmp_path)
+    session_id = _begin(client)
+    client.post(f"/api/sessions/{session_id}/answer", json={"text": ANSWER})
+    body = _await_job(client, session_id)
+    assert body["state"] == "done"
+    assert body["result"]["merged"] is True
+    assert body["result"]["added"] == 3, "the author's answer plus both sides"
+    assert body["result"]["next_question"]["gap_kind"] == "unanswered_attack"
+
+
+def test_two_exchanges_cannot_run_at_once_for_one_session(tmp_path: Path) -> None:
+    """They would race on the session file and on which answer the author meant."""
+    client = _live_client(tmp_path, _slow_turn(delay=1.0))
+    session_id = _begin(client)
+    first = client.post(f"/api/sessions/{session_id}/answer", json={"text": ANSWER})
+    second = client.post(f"/api/sessions/{session_id}/answer", json={"text": REPLY})
+    assert first.status_code == 202
+    assert second.status_code == 409
+    _await_job(client, session_id)
+
+
+def test_a_failed_exchange_still_keeps_the_authors_answer(tmp_path: Path) -> None:
+    """The author's work is not hostage to a model being down (M42)."""
+
+    def _down(question: str, answer: str):  # type: ignore[no-untyped-def]
+        raise RuntimeError("connection refused")
+
+    client = _live_client(tmp_path, _down)
+    session_id = _begin(client)
+    client.post(f"/api/sessions/{session_id}/answer", json={"text": ANSWER})
+    body = _await_job(client, session_id)
+    assert body["state"] == "done"
+    assert body["result"]["merged"] is True
+    assert "connection refused" in body["result"]["turn_error"]
+
+
+def test_polling_a_session_with_no_exchange_is_a_404(tmp_path: Path) -> None:
+    client = _live_client(tmp_path)
+    assert client.get(f"/api/sessions/{_begin(client)}/answer").status_code == 404
+
+
+def test_offline_stays_synchronous(client: TestClient) -> None:
+    """Nothing to poll for when the exchange is instant, and the client is told
+    which it got rather than having to guess.
+    """
+    session_id = _begin(client)
+    response = client.post(f"/api/sessions/{session_id}/answer", json={"text": ANSWER})
+    assert response.status_code == 200
+    assert "merged" in response.json()
+
+
+def test_a_bad_session_id_is_refused_before_a_job_is_started(tmp_path: Path) -> None:
+    client = _live_client(tmp_path)
+    assert client.post("/api/sessions/notavalidid/answer", json={"text": ANSWER}).status_code == 400
