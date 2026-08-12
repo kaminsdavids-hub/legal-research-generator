@@ -38,6 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
             "loop's structure only, and no authority is ever proposed."
         ),
     )
+    parser.add_argument(
+        "--cite-for",
+        choices=["claim", "premise"],
+        default="claim",
+        help=(
+            "what the exchange is asked to cite for. 'premise' asks the models "
+            "for the settled propositions the claim rests on rather than for the "
+            "claim itself; see REMEDIATION 14 for why that is worth measuring."
+        ),
+    )
     parser.add_argument("--out", type=Path, default=None, help="write the full report as JSON")
     parser.add_argument(
         "--only", default="", help="run one session by id, for a quick check"
@@ -110,11 +120,14 @@ def main(argv: list[str] | None = None) -> int:
 
         settings = get_settings()
         gates = Gates.live(settings)
-        turns = build_turn_provider(settings)
+        turns = build_turn_provider(settings, args.cite_for)
     else:
         gates = Gates.offline()
 
-    report = run_all(scripts, gates, turns, mode="live" if args.live else "offline")
+    mode = "live" if args.live else "offline"
+    if args.live and args.cite_for != "claim":
+        mode = f"{mode}/cite-for-{args.cite_for}"
+    report = run_all(scripts, gates, turns, mode=mode)
     print("\n".join(report_lines(report)))
 
     if args.out:

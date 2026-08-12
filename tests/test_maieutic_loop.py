@@ -332,6 +332,41 @@ def test_live_gates_can_confirm_what_a_live_exchange_produces() -> None:
     assert live.grounding.verifier is not None, "a live run must be able to confirm"
 
 
+def test_the_premise_framing_forbids_citing_the_claim_itself() -> None:
+    """An authority attached to the paper's novel claim cannot be grounded: a
+    claim the corpus supports would be COMMONPLACE and the paper would have
+    nothing to argue (REMEDIATION §14).
+    """
+    prompt = debate_prompt("Q?", "Weights are expressive.", "premise")
+    assert "Weights are expressive." in prompt
+    assert "do not attach authority to it" in prompt.lower()
+    assert "established" in prompt.lower()
+
+
+def test_the_two_framings_differ_in_what_they_ask_for() -> None:
+    claim = debate_prompt("Q?", "A claim.", "claim")
+    premise = debate_prompt("Q?", "A claim.", "premise")
+    assert claim != premise
+    assert "Is the following claim correct?" in claim
+    assert "Is the following claim correct?" not in premise
+
+
+def test_an_unknown_framing_is_refused_rather_than_defaulted() -> None:
+    """Silently falling back to `claim` would make an A/B run measure the same
+    arm twice — the shape that nearly wrecked D7.
+    """
+    with pytest.raises(ValueError):
+        debate_prompt("Q?", "A.", "premises")
+
+
+def test_the_runner_carries_the_framing_into_the_report_mode() -> None:
+    """A run that cannot say which arm produced it cannot be compared."""
+    from evals.run_loop_eval import build_parser as eval_parser
+
+    assert eval_parser().parse_args([]).cite_for == "claim"
+    assert eval_parser().parse_args(["--cite-for", "premise"]).cite_for == "premise"
+
+
 def test_live_is_off_unless_asked_for() -> None:
     parser = build_parser()
     assert parser.parse_args(["answer", "x"]).live is False

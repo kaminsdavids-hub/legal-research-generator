@@ -90,22 +90,54 @@ class CorpusCitationVerifier(CitationVerifier):
         return True, f"supported by {record.title} (score {best:.2f})"
 
 
-def debate_prompt(question: str, answer: str) -> str:
-    """Frame the author's answer as the claim the two sides argue over.
+#: What the exchange is asked to cite for.
+#:
+#: ``claim`` is the original framing: argue the author's claim, cite as you go.
+#: ``premise`` exists because that framing produced authorities that could not be
+#: grounded, for a structural reason rather than a fixable one — an authority
+#: attached to the paper's *novel* claim cannot be supported by the corpus,
+#: because a claim the corpus supports would be COMMONPLACE and the paper would
+#: have nothing to argue (REMEDIATION §14). This asks the models to cite for the
+#: settled propositions the claim builds from instead.
+CITE_FOR = ("claim", "premise")
 
-    The Socratic question is context; the *answer* is what gets tested. Sending
-    the question instead would have the models debate a topic and hand back
-    material about the subject in general, when what the loop needs is pressure
-    on the specific thing the author just committed to.
+_CLAIM_PROMPT = (
+    "Is the following claim correct? {claim}\n\n"
+    "It was written in answer to: {question}"
+)
+
+_PREMISE_PROMPT = (
+    "An author has made this claim, which is their own contribution and is NOT "
+    "stated in any existing source: {claim}\n\n"
+    "It was written in answer to: {question}\n\n"
+    "Do not argue for or against the claim itself, and do not attach authority "
+    "to it. Instead identify the ESTABLISHED propositions it depends on — the "
+    "settled law and undisputed facts a reader must already accept before the "
+    "claim can even be considered — and argue about those. Every proposition you "
+    "offer should be one an existing source actually states, not an extension of "
+    "one."
+)
+
+
+def debate_prompt(question: str, answer: str, cite_for: str = "claim") -> str:
+    """Frame what the two sides argue over.
+
+    The Socratic question is context; the *answer* is what the exchange is about.
+    Sending the question instead would have the models debate a topic and hand
+    back material about the subject in general, when what the loop needs is
+    pressure on the specific thing the author just committed to.
+
+    ``cite_for`` chooses whether they argue the claim or the ground beneath it.
     """
-    claim = " ".join(answer.split())
-    return (
-        f"Is the following claim correct? {claim}\n\n"
-        f"It was written in answer to: {' '.join(question.split())}"
+    if cite_for not in CITE_FOR:
+        raise ValueError(f"cite_for must be one of {CITE_FOR}, got {cite_for!r}")
+    template = _CLAIM_PROMPT if cite_for == "claim" else _PREMISE_PROMPT
+    return template.format(
+        claim=" ".join(answer.split()), question=" ".join(question.split())
     )
 
 
-def build_turn_provider(settings: Any) -> Any:
+def build_turn_provider(settings: Any, cite_for: str = "claim") -> Any:
     """A `TurnProvider` running the real dialectic engine.
 
     Built once and reused, so the model clients and the citation cache are not
@@ -118,7 +150,7 @@ def build_turn_provider(settings: Any) -> Any:
     chat = build_dialectic_chat(settings)
 
     def provide(question: str, answer: str) -> Any:
-        return chat.chat(debate_prompt(question, answer))
+        return chat.chat(debate_prompt(question, answer, cite_for))
 
     return provide
 
