@@ -47,6 +47,11 @@ class CorpusRecord(BaseModel):
     year: int | None = None
     url: str = ""
     passages: list[str] = Field(default_factory=list)
+    #: Curated one-line summaries of what this record was admitted to the corpus
+    #: for. Distinct from `passages`, which carry quotable source text: the
+    #: support check reads passages and never these, so they remain available as
+    #: a retrieval signal independent of the grounding gate (REMEDIATION §19).
+    headnotes: list[str] = Field(default_factory=list)
     #: Whether this authority is currently operative. Defaults to in_force so
     #: existing corpora keep their meaning.
     status: AuthorityStatus = AuthorityStatus.IN_FORCE

@@ -56,7 +56,8 @@ test-eval-harness:
 	python -m pytest tests/test_eval_harness.py tests/test_loop_harness.py \
 		tests/test_compare_scorers.py tests/test_fetch_opinion_text.py \
 		tests/test_preflight_models.py \
-		tests/test_retrieval_ceiling.py -q
+		tests/test_retrieval_ceiling.py \
+		tests/test_rerank_experiment.py -q
 
 eval:
 	python evals/run_eval.py

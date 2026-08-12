@@ -1602,3 +1602,58 @@ independent check on retrieval's output rather than a mirror of its objective.
 Any change here should be measured against the ceiling *and* audited for whether
 it has quietly aligned the two — the ceiling tooling makes the first easy and the
 second is a judgement no metric will make.
+
+---
+
+## 19. Reranking on an independent signal: it does not help
+
+§18 required that retrieval improve on a signal the grounding gate does not read,
+or the gate stops being a check. The gate reads exactly one thing:
+`record.passages`, scored against the claim. So the reranker reads everything
+else — the curated `headnotes`, `title`, `court`, `type`, `code`/`section` — and
+never passages. Disjointness is enforced, not intended: for the seven non-case
+records that have no headnotes, `passages` *is* the gate's input, so those score
+on title and code alone.
+
+**A silent data loss found first.** The first run printed "40 records, 0 with
+headnotes". `CorpusRecord` is a pydantic model with no `headnotes` field, and
+pydantic drops unknown keys, so the rebuilt corpus's headnotes vanished on load
+and the reranker had been scoring metadata only. The field is now declared.
+
+This matters beyond the bug: **the broken version scored better.** Claim-arm
+embedding showed 5/14 reranked without headnotes and 1/14 with them. Reporting
+the first would have been reporting a spurious success, and the only reason it
+was caught is that the run prints how many records carry the signal it depends
+on. A measurement that cannot say whether its input arrived is not a measurement.
+
+**Result, over three sets of authorities.**
+
+| authorities | scorer | retrieval | reranked | ceiling |
+|---|---|---|---|---|
+| end-to-end (10) | lexical | 1 | 1 | 8 |
+| end-to-end (10) | embedding | 1 | 1 | 4 |
+| claim arm (14) | lexical | 3 | 3 | 9 |
+| claim arm (14) | embedding | 1 | 1 | 8 |
+| premise arm (15) | lexical | 7 | 8 | 13 |
+| premise arm (15) | embedding | 2 | 2 | 12 |
+
+Five of six cells are flat; one improves by one. **Headnote and metadata
+reranking does not close the gap**, and nothing here justifies shipping it.
+
+**Why it fails, and it is the same wall as before.** A headnote says what a case
+is *about*. Support requires that a specific passage entail a specific claim.
+Topical aboutness does not predict passage-level support, especially when the
+claim is an extension of what the source says — which is D28's tension arriving
+for the third time from a third direction.
+
+**The methodology held even though the result did not.** Agreement between the
+reranker's pick and the gate's favourite ran at 0–1 of n throughout. That is the
+number to watch: it says the signal really was independent. Had reranking hit the
+ceiling *and* agreed with the gate's favourite, the right reading would have been
+collapse, not success.
+
+**Disposition.** `evals/rerank_experiment.py` ships as a measurement tool with
+the independence check built in. No production retriever changes. The headroom
+found in §18 is real and remains open; three candidate closures — the gate's own
+scorer (§18), prompt framing (§15), and now independent-signal reranking — have
+each been tried and rejected on evidence.

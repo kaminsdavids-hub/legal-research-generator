@@ -1146,3 +1146,16 @@ propose only what the gate must accept, and the gate would report a pass forever
 while checking nothing. Any retrieval work here has to improve on a signal the
 support check does not use, and has to be audited for that alignment; the ceiling
 tooling measures the gain but cannot detect the collapse.
+
+### D31. The retrieval headroom is real and still open
+
+§19 tried the one legitimate closure D30 allows — reranking on headnotes, title
+and metadata, none of which the support check reads — and it moved five of six
+measured cells not at all. Topical aboutness does not predict passage-level
+support. The gap between what retrieval picks (1/10) and what is reachable (4/10
+under embedding) stands, and no candidate fix has survived measurement.
+
+The independence check is the part worth keeping: `agrees_with_ceiling` reports
+how often the reranker picks the gate's own favourite, and ran at 0–1 of n. A
+future retrieval change that closes the gap *and* raises that number has not
+improved retrieval, it has aligned it with the gate.
