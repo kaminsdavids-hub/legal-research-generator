@@ -721,14 +721,21 @@ is a table the test iterates, so widening it is a deliberate edit. Enforced by
 `test_a_mostly_hedged_claim_is_reported_but_merges` and
 `test_vacuity_is_the_only_blocking_verdict`.
 
-### M30. Only claim-bearing nodes are judged for banality
+### M30. Only what claims to be the contribution is judged for banality
 
 A paper needs commonplace material: background, setup, statements of existing
-doctrine. A PREMISE or AUTHORITY being unoriginal is correct, not a defect, and
-assessing them would make the manuscript unwritable. The rule runs over THESIS
-and ORIGINAL — the nodes claiming to be the contribution. Enforced by
-`test_background_material_is_supposed_to_be_unoriginal` and
-`test_a_vacuous_premise_does_not_block_a_merge`.
+doctrine. A machine-proposed premise being unoriginal is correct, not a defect,
+and assessing it would make the manuscript unwritable.
+
+`_is_a_contribution` qualifies a node two ways: **what the author wrote**
+(`Provenance.HUMAN`, whatever structural role it plays) or **a THESIS/ORIGINAL
+node** (a contribution by type). The first limb was added after wiring the loop
+up — the adapter never produces a THESIS or an ORIGINAL, so a type-only rule made
+this gate unreachable in the running system and a vacuous answer merged
+unlooked-at. See REMEDIATION §12.1. Enforced by
+`test_what_the_author_wrote_is_judged_whatever_role_it_plays`,
+`test_the_same_words_from_the_machine_are_not_judged` and
+`test_background_material_is_supposed_to_be_unoriginal`.
 
 ### M31. The gate feeds the question policy
 
@@ -780,6 +787,50 @@ The coherence gate blocks patches that create a `DEPENDS_ON` cycle, but a graph
 loaded from disk can carry one. No reading order is correct, so the renderer
 emits the nodes in a stable order and warns; hanging or silently dropping them
 would be worse. Enforced by `test_a_self_grounding_graph_renders_rather_than_hanging`.
+
+### M36. Every gate runs, and every refusal is reported
+
+`GateReport.refusals` lists every reason a patch cannot merge, not just the
+first. Reporting one refusal and stopping would make the author fix a problem,
+resubmit, and discover the next — and the system's whole premise is that their
+attention is the scarce resource. Advisories are carried separately and never
+appear as refusals. Enforced by
+`test_every_refusal_is_reported_not_just_the_first` and
+`test_advisories_are_reported_without_blocking`.
+
+The gate order is coherence → grounding → novelty → banality: a structurally
+broken patch makes the other verdicts meaningless, and a fabricated citation
+should be reported as fabrication rather than as restatement.
+
+### M37. A refused patch leaves the question pending
+
+A refusal means the author has not answered yet, not that the gap has been dealt
+with. The question is not recorded in the `AskedLog` and the loop re-offers it.
+Enforced by `test_a_refused_patch_leaves_the_question_pending`.
+
+### M38. Offline, grounding fails closed on any authority
+
+`Gates.offline()` builds a grounding gate with no verifier. Nothing offline can
+confirm a citation, and merging one on trust is the failure the gate exists to
+prevent, so this is correct rather than inconvenient. Enforced by
+`test_offline_grounding_fails_closed_on_an_authority`.
+
+### M39. The CLI is exercised as a CLI
+
+`build_parser` is separate from `main`, and the tests invoke `main()` with real
+argv for every subcommand. A CLI whose parser is never exercised can be broken
+for every invocation while the suite stays green — which is what happened in
+REMEDIATION §11.11c. Enforced by `test_the_parser_accepts_every_advertised_subcommand`,
+`test_begin_then_answer_then_render` and
+`test_cycle_reads_answers_from_stdin_and_stops_on_a_blank_line`.
+
+### M40. A session survives a crash mid-cycle
+
+State is written with write-then-rename, so an interrupted save cannot truncate a
+manuscript, and `cycle` saves after every round rather than only at the end.
+Enforced by `test_cycle_saves_every_round_not_only_at_the_end` (which interrupts
+mid-loop and reloads from disk), `test_a_save_does_not_leave_a_temp_file_behind`
+and `test_a_session_round_trips_through_disk`.
 
 ---
 
@@ -907,3 +958,19 @@ honest consequence of refusing a model at this step, and it means the render
 output is a faithful view of the argument rather than a draft of the paper.
 Closing that gap without reintroducing fabrication risk is an open design
 question, not a TODO.
+
+### D20. The loop has never been run with a live dialectic turn
+
+`Session.answer` accepts a `TurnProvider` and the CLI never supplies one, so
+every merge so far has carried only the author's own answer. The machine's
+pressure — thesis support, antithesis objections, the crux table — has not been
+through the gates in a running loop even once. This is D11 restated at the
+system level, and it is the single largest untested surface in the module.
+
+### D21. Nothing prevents the author from being asked in a bad order
+
+The policy asks about the worst structural hole first, which is not the same as
+asking in the order that helps an author think. A paper is written by developing
+one line of argument, and this engine will happily jump between sections because
+a cycle in one outranks an unanswered objection in another. Whether that is
+disruptive enough to matter is a question for someone using it, not a test.

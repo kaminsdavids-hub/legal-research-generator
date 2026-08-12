@@ -50,6 +50,7 @@ dev = [
 lrg-api = "legal_research.api.app:main"
 lrg-demo = "legal_research.demo:main"
 lrg-ingest = "legal_research.ingest.cli:main"
+maieutic = "modules.maieutic.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/legal_research", "modules"]

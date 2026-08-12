@@ -23,11 +23,13 @@ different reasons and both of them matter:
   embeddings this degrades to lexical overlap, which cannot see a paraphrase —
   the very thing a commonplace claim is.
 
-**Only claim-bearing nodes are assessed at all.** A paper needs commonplace
-material: background, setup, statements of existing doctrine. A PREMISE or an
-AUTHORITY being unoriginal is correct, not a defect, and assessing them would
-make the manuscript unwritable. So the rule runs over THESIS and ORIGINAL nodes,
-the ones claiming to be the contribution.
+**Only what claims to be the contribution is assessed.** A paper needs
+commonplace material: background, setup, statements of existing doctrine. A
+machine-proposed premise being unoriginal is correct, not a defect, and assessing
+it would make the manuscript unwritable. The rule therefore runs over what the
+author wrote and over THESIS/ORIGINAL nodes — see :func:`_is_a_contribution`,
+whose second limb exists because a type-only rule made this gate unreachable in
+the assembled loop.
 
 This gate is therefore weaker than the other three, and deliberately so. It is a
 signal to the author and to the Socratic engine about where the paper is thin,
@@ -41,7 +43,7 @@ from enum import StrEnum
 
 from modules.dialectic import textnorm
 
-from .graph import ArgumentGraph, GraphPatch, Node
+from .graph import ArgumentGraph, GraphPatch, Node, Provenance
 from .novelty import Embedder, LexicalEmbedder, Method, cosine
 from .socratic import CLAIM_TYPES
 
@@ -58,6 +60,24 @@ HEDGES = frozenset(
         "apparently", "seemingly", "ostensibly", "plausibly",
     }
 )
+
+
+def _is_a_contribution(node: Node) -> bool:
+    """Whether this node claims to be the paper's contribution.
+
+    Two ways to qualify, and the second was learned by wiring the loop up. A
+    THESIS or ORIGINAL node claims to be a contribution by its type. But the
+    adapter never produces either — an author's answer becomes a REPLY, an
+    OBJECTION or a PREMISE depending on the gap it answers — so a type-only rule
+    made this gate unreachable in the running system: a vacuous answer merged
+    because nothing looked at it. What the author wrote is the contribution
+    whatever structural role it plays, and a vacuous reply is as empty as a
+    vacuous thesis.
+
+    Machine-proposed premises, authorities and objections stay exempt. They are
+    background and pressure, and both are supposed to be unoriginal.
+    """
+    return node.provenance is Provenance.HUMAN or node.type in CLAIM_TYPES
 
 
 class Verdict(StrEnum):
@@ -164,13 +184,13 @@ class BanalityGate:
         self.hedged_at = self.HEDGED_AT if hedged_at is None else hedged_at
 
     def assess(self, node: Node) -> Assessment:
-        if node.type not in CLAIM_TYPES:
+        if not _is_a_contribution(node):
             # Background, setup and statements of existing doctrine are supposed
             # to be unoriginal. Judging them would make the paper unwritable.
             return Assessment(
                 node_id=node.id,
                 verdict=Verdict.SUBSTANTIVE,
-                detail="no banality rule applies to this node type",
+                detail="no banality rule applies to this node",
                 section=node.section,
             )
 

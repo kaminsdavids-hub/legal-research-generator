@@ -1131,3 +1131,43 @@ than calling `DialecticChat.chat()`, and the eval would exercise a
 reimplementation of the production path instead of the path itself. Given four
 of the eight bugs above appeared only in the real path, that trade was not
 taken.
+
+---
+
+## 12. Defects found by assembling the loop
+
+The maieutic components were each built and tested in isolation and each was
+green. Wiring them into `modules/maieutic/loop.py` and driving them through the
+CLI surfaced one defect that no unit test could have found, because it was a
+property of the composition rather than of any component.
+
+### 12.1. The banality gate was unreachable in the running system
+
+**Symptom.** A CLI session accepted `"It may perhaps arguably possibly seem so."`
+as an answer and merged it. The banality gate exists precisely to refuse that.
+
+**Cause.** `BanalityGate.assess` judged only `THESIS` and `ORIGINAL` nodes —
+the ones "claiming to be the contribution" — which was written and tested before
+the adapter existed. The adapter never produces either type: an author's answer
+becomes a `REPLY`, an `OBJECTION` or a `PREMISE` depending on which gap it
+answers. So in the assembled loop the gate looked at every node the adapter
+produced, found none of them in scope, and passed everything.
+
+Every banality test passed throughout, because they all constructed
+`Node.from_human(NodeType.ORIGINAL, ...)` directly — the one shape the loop
+never produces. The tests agreed with the code and both were disconnected from
+the system.
+
+**Fix.** `_is_a_contribution` now qualifies a node two ways: `Provenance.HUMAN`
+(what the author wrote, whatever structural role it plays) or a THESIS/ORIGINAL
+type. A vacuous reply is as empty as a vacuous thesis. Machine-proposed premises,
+authorities and objections stay exempt, because background and pressure are both
+supposed to be unoriginal.
+
+**What it cost, and the general lesson.** Nothing, because the loop had not been
+run in anger. The lesson is the one this repository keeps relearning in different
+clothes: a component's tests establish that it does what its author thought, not
+that it is reachable. §11.6 was a log wrapper that dropped a method; §11.11c was
+a CLI no test invoked. This is the same shape — an interface agreed with itself
+and with no one else. The first end-to-end run is what found it, and it found it
+in the first three commands.

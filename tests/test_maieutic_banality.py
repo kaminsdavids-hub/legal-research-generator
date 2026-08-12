@@ -144,6 +144,24 @@ def test_a_vacuous_premise_does_not_block_a_merge() -> None:
     assert BanalityGate().assess_patch(GraphPatch(nodes=[node]), ArgumentGraph()).passed
 
 
+def test_what_the_author_wrote_is_judged_whatever_role_it_plays() -> None:
+    """The adapter never produces a THESIS or an ORIGINAL — an answer becomes a
+    reply, an objection or a premise. A type-only rule made this gate
+    unreachable in the assembled loop, so a vacuous answer merged unlooked-at.
+    """
+    for kind in (NodeType.REPLY, NodeType.OBJECTION, NodeType.PREMISE):
+        node = Node.from_human(kind, "It may perhaps arguably seem possible.")
+        assert BanalityGate().assess(node).verdict is Verdict.VACUOUS
+
+
+def test_the_same_words_from_the_machine_are_not_judged() -> None:
+    """Machine-proposed premises and objections are background and pressure.
+    Both are supposed to be unoriginal.
+    """
+    node = Node.propose(NodeType.REPLY, "It may perhaps arguably seem possible.")
+    assert BanalityGate().assess(node).verdict is Verdict.SUBSTANTIVE
+
+
 def test_a_thesis_is_judged_like_an_original() -> None:
     node = Node.from_human(NodeType.THESIS, "It may perhaps arguably seem possible.")
     assert BanalityGate().assess(node).verdict is Verdict.VACUOUS
