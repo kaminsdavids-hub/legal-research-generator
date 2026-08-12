@@ -11,9 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from modules.dialectic.models import CitationSlot, DialecticTurn, Position, SlotStatus
 from modules.maieutic.cli import build_parser, main
 from modules.maieutic.graph import Edge, EdgeType, GraphPatch, Node, NodeType
 from modules.maieutic.loop import Gates, Session
+from modules.maieutic.service import debate_prompt
 from modules.maieutic.socratic import GapKind
 
 THESIS = "Publishing open model weights is not a deemed export."
@@ -152,6 +154,189 @@ def test_advisories_are_reported_without_blocking() -> None:
     result = session.answer("This may perhaps arguably be the generally better view.")
     assert result.merged
     assert result.report and result.report.advisories
+
+
+# --------------------------------------------------------------------------- #
+# The live dialectic exchange
+# --------------------------------------------------------------------------- #
+def _turn(thesis: str, antithesis: str) -> DialecticTurn:
+    return DialecticTurn(
+        question="q",
+        thesis=Position(
+            side="thesis",
+            model="m1",
+            family="f1",
+            propositions=[CitationSlot(proposition=thesis)],
+        ),
+        antithesis=Position(
+            side="antithesis",
+            model="m2",
+            family="f2",
+            propositions=[CitationSlot(proposition=antithesis)],
+        ),
+        synthesis="The machine's reconciliation of the two.",
+    )
+
+
+def test_an_exchange_adds_the_machines_pressure_around_the_answer() -> None:
+    session = _started()
+    session.ask()
+    result = session.answer(
+        ANSWER,
+        turns=lambda q, a: _turn(
+            "Export control has always excluded published technical data.",
+            "Regulators have narrowed that exclusion for dual-use software.",
+        ),
+    )
+    assert result.merged
+    types = {session.graph.nodes[i].type for i in result.added}
+    assert NodeType.OBJECTION in types, "the antithesis must arrive as an objection"
+    assert len(result.added) == 3
+
+
+def test_the_synthesis_does_not_reach_the_manuscript_through_the_loop() -> None:
+    session = _started()
+    session.ask()
+    session.answer(ANSWER, turns=lambda q, a: _turn("Support.", "Objection."))
+    assert "reconciliation" not in session.manuscript().text
+
+
+def test_a_failed_exchange_costs_the_pressure_never_the_answer() -> None:
+    """The author's work is not hostage to a model being down."""
+
+    def _down(question: str, answer: str) -> DialecticTurn:
+        raise RuntimeError("connection refused")
+
+    session = _started()
+    session.ask()
+    result = session.answer(ANSWER, turns=_down)
+    assert result.merged
+    assert result.added, "the author's own answer still merged"
+    assert "connection refused" in result.turn_error
+
+
+def test_a_successful_exchange_reports_no_error() -> None:
+    session = _started()
+    session.ask()
+    result = session.answer(ANSWER, turns=lambda q, a: _turn("Support.", "Objection."))
+    assert result.turn_error == ""
+
+
+def test_the_machine_cannot_merge_the_authors_answer_back_at_them() -> None:
+    """A thesis that parrots the answer is compared against it and refused."""
+    session = _started()
+    session.ask()
+    result = session.answer(ANSWER, turns=lambda q, a: _turn(a, "A real objection."))
+    assert result.report is not None
+    echoed = [
+        v for v in result.report.novelty.verdicts if not v.accepted
+    ]
+    assert echoed, "restating the author's answer must not pass novelty"
+
+
+def test_the_debate_prompt_puts_the_answer_under_test_not_the_question() -> None:
+    """Sending the question would have the models debate the topic in general."""
+    prompt = debate_prompt("What is the strongest objection?", ANSWER)
+    assert ANSWER in prompt
+    assert prompt.index(ANSWER) < prompt.index("strongest objection")
+
+
+def _cited_turn() -> DialecticTurn:
+    """A turn whose thesis cites an authority nothing can confirm."""
+    return DialecticTurn(
+        question="q",
+        thesis=Position(
+            side="thesis",
+            model="m1",
+            family="f1",
+            propositions=[
+                CitationSlot(
+                    proposition="Published technical data has always been excluded.",
+                    status=SlotStatus.VERIFIED,
+                    normalized_cite="445 U.S. 222",
+                )
+            ],
+        ),
+        antithesis=Position(side="antithesis", model="m2", family="f2"),
+    )
+
+
+def test_the_machines_bad_citation_does_not_cost_the_author_their_answer() -> None:
+    """Grounding is all-or-nothing across a patch, and in the assembled loop
+    that meant the party who cites badly is the machine and the party who loses
+    their work is the author. Every live exchange failed this way
+    (REMEDIATION §12.3).
+    """
+    session = _started()
+    session.ask()
+    result = session.answer(ANSWER, turns=lambda q, a: _cited_turn())
+    assert result.merged, "the author's answer must survive the machine's bad cite"
+    assert result.dropped, "and the ungrounded node must be named, not silently lost"
+    assert ANSWER in session.manuscript().text
+
+
+def test_nothing_ungrounded_reaches_the_manuscript() -> None:
+    """The invariant that actually matters is preserved by dropping, not by
+    refusing the whole patch.
+    """
+    session = _started()
+    session.ask()
+    session.answer(ANSWER, turns=lambda q, a: _cited_turn())
+    assert "445 U.S. 222" not in session.manuscript().text
+    assert not [n for n in session.graph.nodes.values() if n.type is NodeType.AUTHORITY]
+
+
+def test_atomicity_gives_way_only_across_parties() -> None:
+    """If a node the author wrote fails grounding, the patch still fails whole."""
+    session = Session()
+    floating = Node.from_human(NodeType.ORIGINAL, "An unsupported position.")
+    session.graph.apply(GraphPatch(nodes=[Node.from_human(NodeType.THESIS, "Seed.")]))
+
+    patch = GraphPatch(nodes=[floating])
+    report = Gates.offline().check(patch, session.graph)
+    assert not report.passed
+    assert any("unargued_original" in r for r in report.refusals)
+
+
+def test_a_dropped_node_is_reported_by_the_cli(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    session = _started()
+    session.ask()
+    result = session.answer(ANSWER, turns=lambda q, a: _cited_turn())
+    from modules.maieutic.cli import _report
+
+    _report(result)
+    assert "could not be grounded" in capsys.readouterr().out
+
+
+def test_live_gates_can_confirm_what_a_live_exchange_produces() -> None:
+    """A live run retrieves and verifies citations, so it produces AUTHORITY
+    nodes. Offline gates have no verifier and refuse every one of them at the
+    fabrication wall — for want of a verifier, not for want of an authority.
+    The two halves must be configured together (REMEDIATION §12.2).
+    """
+    from legal_research.config import get_settings
+
+    session = _started()
+    thesis = next(iter(session.graph.nodes))
+    authority = Node.propose(
+        NodeType.AUTHORITY, "Source code is protected expression.", citation="1 U.S. 1"
+    )
+    patch = GraphPatch(
+        nodes=[authority], edges=[Edge(authority.id, thesis, EdgeType.SUPPORTS)]
+    )
+
+    offline = Gates.offline().check(patch, session.graph)
+    assert any("no verifier configured" in r for r in offline.refusals)
+
+    live = Gates.live(get_settings())
+    assert live.grounding.verifier is not None, "a live run must be able to confirm"
+
+
+def test_live_is_off_unless_asked_for() -> None:
+    parser = build_parser()
+    assert parser.parse_args(["answer", "x"]).live is False
+    assert parser.parse_args(["answer", "--live", "x"]).live is True
+    assert parser.parse_args(["cycle", "--live"]).live is True
 
 
 # --------------------------------------------------------------------------- #

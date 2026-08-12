@@ -480,6 +480,16 @@ beside verified material is where an unsupported claim does the most damage.
 Enforced by `test_a_patch_cannot_smuggle_a_restatement_beside_something_new` and
 `test_grounding_is_all_or_nothing_across_a_patch`.
 
+**Amended after the first live run.** The gate is still all-or-nothing and the
+test above still holds — but the *loop* no longer refuses the whole patch when
+the only ungrounded nodes are the machine's. Atomicity had a consequence nobody
+chose: the party that cites badly is the machine and the party that loses their
+work is the author, and every live exchange failed that way. What actually
+matters is that nothing ungrounded reaches the manuscript, and dropping the
+offending nodes secures that just as well. Atomicity therefore gives way, and
+only across parties: if a node the **author** wrote fails grounding, the patch
+still fails whole. See M41 and REMEDIATION §12.3.
+
 ### M6. Every node is verified-cited or explicitly argued — there is no third category
 
 AUTHORITY nodes fabricate, so a citation must resolve through retrieval *and*
@@ -832,6 +842,43 @@ Enforced by `test_cycle_saves_every_round_not_only_at_the_end` (which interrupts
 mid-loop and reloads from disk), `test_a_save_does_not_leave_a_temp_file_behind`
 and `test_a_session_round_trips_through_disk`.
 
+### M41. A live run is gated by gates that can confirm what it produces
+
+`Gates.live(settings)` builds the grounding gate with a corpus verifier and gives
+the banality gate the corpus as its view of the literature. Running the live
+engine behind `Gates.offline()` refuses every exchange at the fabrication wall
+for want of a verifier rather than for want of an authority (REMEDIATION §12.2).
+Enforced by `test_live_gates_can_confirm_what_a_live_exchange_produces`.
+
+### M42. The machine's failures do not cost the author their answer
+
+A dialectic exchange that raises is caught in `Session.answer`, and the patch
+proceeds carrying what the author wrote — their work is not hostage to a model
+being down. An exchange whose authorities cannot be grounded has those nodes
+dropped and *named*, not silently discarded, and the author's answer merges
+without them. If a node the author wrote fails grounding, the patch still fails
+whole. Enforced by `test_a_failed_exchange_costs_the_pressure_never_the_answer`,
+`test_the_machines_bad_citation_does_not_cost_the_author_their_answer`,
+`test_nothing_ungrounded_reaches_the_manuscript` and
+`test_atomicity_gives_way_only_across_parties`.
+
+### M43. The reduced patch is what merges
+
+When nodes are dropped, `graph.apply` receives the patch the gates actually
+judged. Merging the original would merge something unjudged — which is what the
+code did until the test above caught it.
+
+### M44. The answer is what gets debated, not the question
+
+`debate_prompt` puts the author's answer under test with the Socratic question as
+context. Sending the question instead would have the models argue the topic in
+general and hand back material about the subject, when what the loop needs is
+pressure on the specific thing the author just committed to. Enforced by
+`test_the_debate_prompt_puts_the_answer_under_test_not_the_question`.
+
+A thesis proposition that parrots the answer back is compared against it and
+refused by novelty — `test_the_machine_cannot_merge_the_authors_answer_back_at_them`.
+
 ---
 
 ## Maieutic — Designed, not yet enforced
@@ -959,13 +1006,16 @@ output is a faithful view of the argument rather than a draft of the paper.
 Closing that gap without reintroducing fabrication risk is an open design
 question, not a TODO.
 
-### D20. The loop has never been run with a live dialectic turn
+### D20. The live loop has been run once, by hand
 
-`Session.answer` accepts a `TurnProvider` and the CLI never supplies one, so
-every merge so far has carried only the author's own answer. The machine's
-pressure — thesis support, antithesis objections, the crux table — has not been
-through the gates in a running loop even once. This is D11 restated at the
-system level, and it is the single largest untested surface in the module.
+Superseded in part. `--live` now runs the real engine and a live exchange has
+merged: four nodes from one answer, two ungrounded authorities dropped, ~2m45s
+across four local models. What that establishes is that the path works, not that
+it works well. One answer on one thesis is an anecdote, not a measurement, and
+nothing here records how often a live exchange yields objections worth answering,
+how many of its authorities survive grounding, or what the loop feels like over a
+whole paper. The eval harness measures the dialectic module in isolation; there
+is no equivalent for the loop.
 
 ### D21. Nothing prevents the author from being asked in a bad order
 

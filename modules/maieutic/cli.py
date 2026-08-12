@@ -15,8 +15,9 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
-from .loop import GateReport, Gates, Session, StepResult
+from .loop import GateReport, Gates, Session, StepResult, TurnProvider
 from .render import Audience
 from .socratic import SocraticEngine
 
@@ -42,10 +43,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("ask", help="show the next question")
 
-    answer = sub.add_parser("answer", help="answer the pending question")
+    live = argparse.ArgumentParser(add_help=False)
+    live.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "run the dialectic engine over your answer, so the machine argues "
+            "both sides of it. Needs the configured local models; without this "
+            "a merge carries only your own words."
+        ),
+    )
+
+    answer = sub.add_parser("answer", help="answer the pending question", parents=[live])
     answer.add_argument("text")
 
-    cycle = sub.add_parser("cycle", help="ask and answer until you stop")
+    cycle = sub.add_parser("cycle", help="ask and answer until you stop", parents=[live])
     cycle.add_argument(
         "--rounds", type=int, default=0, help="stop after N rounds (0 = until done)"
     )
@@ -64,8 +76,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     session = Session.load(args.state)
-    gates = Gates.offline()
     engine = SocraticEngine()
+    # The gates must match the exchange: a live run produces authorities, and
+    # offline gates have no verifier to confirm them. See REMEDIATION 12.2.
+    gates = Gates.live(_settings()) if getattr(args, "live", False) else Gates.offline()
 
     if args.command == "begin":
         if session.graph.nodes:
@@ -82,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "answer":
         if session.pending is None and _ask(session, engine) is None:
             return 0
-        _report(session.answer(args.text, gates))
+        _report(session.answer(args.text, gates, _turns(args)))
 
     elif args.command == "cycle":
         return _cycle(session, engine, gates, args)
@@ -102,6 +116,27 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _settings() -> Any:
+    from legal_research.config import get_settings
+
+    return get_settings()
+
+
+def _turns(args: argparse.Namespace) -> TurnProvider | None:
+    """Build the live turn provider, once, when --live is given.
+
+    A failure to *construct* it is fatal: the author asked for the exchange and
+    is entitled to know it will not happen before they start answering, rather
+    than discovering it one refusal at a time.
+    """
+    if not getattr(args, "live", False):
+        return None
+    from .service import build_turn_provider
+
+    provider: TurnProvider = build_turn_provider(_settings())
+    return provider
+
+
 def _cycle(
     session: Session,
     engine: SocraticEngine,
@@ -109,6 +144,7 @@ def _cycle(
     args: argparse.Namespace,
 ) -> int:
     """Ask, read an answer, gate, merge. Repeat until the author stops."""
+    turns = _turns(args)
     rounds = 0
     while args.rounds == 0 or rounds < args.rounds:
         question = _ask(session, engine)
@@ -123,7 +159,7 @@ def _cycle(
         if not text.strip():
             break
 
-        _report(session.answer(text, gates))
+        _report(session.answer(text, gates, turns))
         # Saved every round. A crash mid-session must not cost the author the
         # answers they already gave.
         session.save(args.state)
@@ -157,6 +193,16 @@ def _report(result: StepResult) -> None:
         print(f"  refused — {reason}")
     if result.report:
         _advise(result.report)
+    if result.turn_error:
+        print(
+            f"  the dialectic exchange failed ({result.turn_error}); your answer "
+            "was kept, the machine's objections were not produced"
+        )
+    for node_id in result.dropped:
+        print(
+            f"  dropped — the machine's node {node_id} could not be grounded; "
+            "your answer merged without it"
+        )
     if result.unresolved:
         print(
             "  note — this gap needs an edit rather than an addition, so your "

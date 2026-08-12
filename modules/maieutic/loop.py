@@ -29,7 +29,7 @@ from modules.dialectic.models import DialecticTurn
 from .banality import BanalityGate, PatchBanality, Source
 from .coherence import CoherenceGate, PatchCoherence
 from .dialectic_adapter import Adaptation, adapt
-from .graph import ArgumentGraph, GraphPatch, Node, NodeType
+from .graph import ArgumentGraph, GraphPatch, Node, NodeType, Provenance
 from .grounding import GroundingGate, PatchGrounding
 from .novelty import LexicalEmbedder, NoveltyGate, PatchNovelty
 from .render import Audience, Manuscript, render
@@ -102,6 +102,39 @@ class Gates:
         """
         return cls(banality=BanalityGate(sources or []))
 
+    @classmethod
+    def live(cls, settings: Any) -> Gates:
+        """Gates matched to a live exchange.
+
+        A live run retrieves and verifies citations, so it produces AUTHORITY
+        nodes — and the offline grounding gate has no verifier and refuses every
+        one of them. Running the live engine behind offline gates therefore
+        refuses whole exchanges at the fabrication wall for want of a verifier,
+        not for want of an authority. The two halves have to be configured
+        together (REMEDIATION §12.2).
+
+        The corpus doubles as the banality gate's view of the literature: the
+        same passages that confirm an authority are what the field already says.
+        """
+        from legal_research.citations.corpus import load_corpus
+
+        from .service import build_grounding_gate
+
+        sources: list[Source] = []
+        try:
+            corpus = load_corpus(settings.corpus_path)
+        except Exception:  # noqa: BLE001 - no corpus is a real deployment state
+            corpus = None
+        if corpus is not None:
+            for record in getattr(corpus, "records", []):
+                for passage in getattr(record, "passages", []):
+                    sources.append(Source(str(getattr(record, "title", "")), passage))
+
+        return cls(
+            grounding=build_grounding_gate(settings),
+            banality=BanalityGate(sources),
+        )
+
     def check(self, patch: GraphPatch, graph: ArgumentGraph) -> GateReport:
         return GateReport(
             coherence=self.coherence.assess(patch, graph),
@@ -121,6 +154,11 @@ class StepResult:
     #: True when the answer could not close the gap it responded to.
     unresolved: bool = False
     adaptation: Adaptation | None = None
+    #: Set when the dialectic exchange failed. The answer still merges; what was
+    #: lost is the machine's pressure, and the author must be told which.
+    turn_error: str = ""
+    #: Machine-proposed nodes dropped so the author's answer could merge.
+    dropped: list[str] = field(default_factory=list)
 
     @property
     def refusals(self) -> list[str]:
@@ -171,23 +209,46 @@ class Session:
             raise ValueError("no question is pending; call ask() first")
 
         gates = gates or Gates.offline()
-        turn = turns(question.text, text) if turns else None
-        adaptation = adapt(question, text, turn)
 
-        report = gates.check(adaptation.patch, self.graph)
+        turn = None
+        turn_error = ""
+        if turns is not None:
+            try:
+                turn = turns(question.text, text)
+            except Exception as exc:  # noqa: BLE001 - see below
+                # A model being down costs the machine's pressure, never the
+                # author's own answer. Their work is not hostage to an exchange
+                # that failed, so the patch proceeds carrying what they wrote.
+                turn_error = f"{type(exc).__name__}: {exc}"
+
+        adaptation = adapt(question, text, turn)
+        patch = adaptation.patch
+
+        report = gates.check(patch, self.graph)
+        dropped: list[str] = []
+        if not report.passed:
+            reduced = _without_ungrounded_machine_nodes(patch, self.graph, report)
+            if reduced is not None:
+                patch, dropped = reduced
+                report = gates.check(patch, self.graph)
+
         result = StepResult(
             question=question,
             answer=text,
             report=report,
             unresolved=adaptation.unresolved,
             adaptation=adaptation,
+            turn_error=turn_error,
+            dropped=dropped,
         )
         if not report.passed:
             # The question stays pending. A refused patch means the author has
             # not yet answered, not that the gap has been dealt with.
             return result
 
-        result.added = self.graph.apply(adaptation.patch)
+        # `patch`, not `adaptation.patch`: the reduced one is what the gates
+        # judged, and merging anything else means merging something unjudged.
+        result.added = self.graph.apply(patch)
         result.merged = True
         self.asked.record(question)
         self.barren |= report.banality.barren_sections()
@@ -239,6 +300,55 @@ class Session:
         if not path.exists():
             return cls()
         return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _without_ungrounded_machine_nodes(
+    patch: GraphPatch, graph: ArgumentGraph, report: GateReport
+) -> tuple[GraphPatch, list[str]] | None:
+    """Drop the machine's ungrounded nodes so the author's answer can still merge.
+
+    Grounding is all-or-nothing across a patch, and that rule was written to stop
+    a fabricated claim entering the manuscript beside verified material. In the
+    assembled loop it had a consequence nobody chose: the party that cites badly
+    is the *machine*, and the party that loses their work is the *author*. Every
+    live exchange failed this way, because a model that retrieves two authorities
+    the source does not support takes the author's own paragraph down with them
+    (REMEDIATION §12.3).
+
+    What actually matters is that nothing ungrounded reaches the manuscript, and
+    dropping the offending nodes secures that just as well as refusing the patch.
+    So the atomicity of a patch gives way, and only across parties: if any node
+    the *author* wrote fails grounding, the patch still fails whole.
+
+    Returns None when this cannot apply — when an author node failed, when a
+    non-grounding gate failed, or when nothing would be left.
+    """
+    failures = {r.node_id for r in report.grounding.failures}
+    if not failures:
+        return None
+    # Only grounding may be resolved this way. A coherence failure is structural
+    # and a banality failure is the author's own, and neither is repaired by
+    # deleting somebody else's node.
+    if not report.coherence.passed or not report.banality.passed:
+        return None
+
+    by_id = {n.id: n for n in patch.nodes}
+    if any(
+        by_id[node_id].provenance is Provenance.HUMAN
+        for node_id in failures
+        if node_id in by_id
+    ):
+        return None
+
+    kept = [n for n in patch.nodes if n.id not in failures]
+    if not kept:
+        return None
+    known = {n.id for n in kept} | set(graph.nodes)
+    edges = [e for e in patch.edges if e.source in known and e.target in known]
+    return (
+        GraphPatch(nodes=kept, edges=edges, rationale=patch.rationale),
+        sorted(failures),
+    )
 
 
 def _question_to_dict(question: Question) -> dict[str, Any]:

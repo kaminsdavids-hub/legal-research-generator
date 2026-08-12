@@ -90,6 +90,39 @@ class CorpusCitationVerifier(CitationVerifier):
         return True, f"supported by {record.title} (score {best:.2f})"
 
 
+def debate_prompt(question: str, answer: str) -> str:
+    """Frame the author's answer as the claim the two sides argue over.
+
+    The Socratic question is context; the *answer* is what gets tested. Sending
+    the question instead would have the models debate a topic and hand back
+    material about the subject in general, when what the loop needs is pressure
+    on the specific thing the author just committed to.
+    """
+    claim = " ".join(answer.split())
+    return (
+        f"Is the following claim correct? {claim}\n\n"
+        f"It was written in answer to: {' '.join(question.split())}"
+    )
+
+
+def build_turn_provider(settings: Any) -> Any:
+    """A `TurnProvider` running the real dialectic engine.
+
+    Built once and reused, so the model clients and the citation cache are not
+    reconstructed per answer. Exceptions are deliberately *not* caught here —
+    `Session.answer` owns that, so a model being down costs the author the
+    machine's pressure and never their own answer.
+    """
+    from modules.dialectic.service import build_dialectic_chat
+
+    chat = build_dialectic_chat(settings)
+
+    def provide(question: str, answer: str) -> Any:
+        return chat.chat(debate_prompt(question, answer))
+
+    return provide
+
+
 def build_grounding_gate(settings: Any) -> Any:
     """Build a grounding gate wired to the configured corpus."""
     from legal_research.citations.corpus import load_corpus

@@ -1171,3 +1171,83 @@ that it is reachable. §11.6 was a log wrapper that dropped a method; §11.11c w
 a CLI no test invoked. This is the same shape — an interface agreed with itself
 and with no one else. The first end-to-end run is what found it, and it found it
 in the first three commands.
+
+### 12.2. The live engine ran behind gates that could not confirm anything
+
+**Symptom.** The first `maieutic answer --live` run called four models for 2m51s,
+produced four verified authorities, and refused all of them:
+
+```
+refused — grounding: unresolved_citation — no verifier configured; an authority
+cannot merge on trust. Failing closed here is deliberate: this is the
+fabrication wall.
+```
+
+**Cause.** `--live` swapped in the real dialectic engine but left `Gates.offline()`
+in place. The offline grounding gate has no verifier by design, so every
+AUTHORITY node the live exchange produced was refused — for want of a verifier,
+not for want of an authority. The two halves of the system were configured
+independently and disagreed.
+
+**Fix.** `Gates.live(settings)` builds the grounding gate with the corpus
+verifier, and hands the banality gate the same corpus as its view of the
+literature. The CLI selects gates from the same `--live` flag that selects the
+engine, so they cannot diverge again.
+
+### 12.3. All-or-nothing grounding made every live exchange fail
+
+**Symptom.** With the gates fixed, citations resolved but the merge still failed:
+
+```
+refused — grounding: unsupported_by_source — 381 U.S. 301 resolves but does not
+support this claim (score 0.18 < 0.34)
+```
+
+and the author's own answer was refused along with them. Repeating with the
+topic-specific corpus rather than the sample corpus reduced the count from four
+bad authorities to two but did not change the outcome, which is what ruled out a
+misconfiguration.
+
+**Cause.** Two things, one working and one not.
+
+The refusal itself was **correct**: the models retrieved real cases for claims
+the source text does not support, and that is precisely the subtler fabrication
+the grounding gate exists to catch (OBSERVABLES M6). It had never fired on real
+model output before.
+
+What was wrong was the blast radius. Grounding is all-or-nothing across a patch,
+a rule written to stop a fabricated claim entering the manuscript beside verified
+material. In the assembled loop that rule had a consequence nobody chose: **the
+party that cites badly is the machine, and the party that loses their work is the
+author.** Their paragraph was discarded because a model retrieved two citations
+that did not hold up. Every live exchange failed this way, so `--live` had never
+merged once.
+
+**Fix (a deliberate invariant change).** What actually matters is that nothing
+ungrounded reaches the manuscript, and dropping the offending nodes secures that
+just as well as refusing the patch. `_without_ungrounded_machine_nodes` drops
+machine-proposed nodes that fail grounding, names them in the result, and
+re-runs every gate on what is left. Atomicity gives way, and only across parties:
+if a node the **author** wrote fails grounding, the patch still fails whole. Only
+grounding is resolved this way — a coherence failure is structural and a banality
+failure is the author's own, and neither is repaired by deleting someone else's
+node. OBSERVABLES M5 is amended rather than quietly reinterpreted, and M41–M43
+record the new behaviour.
+
+**A bug inside the fix.** The first version reduced the patch for the gate check
+and then merged `adaptation.patch` — the original. The gates judged one patch and
+the graph received another, so the ungrounded authority merged anyway and
+rendered as `(445 U.S. 222 — UNVERIFIED)`. `test_nothing_ungrounded_reaches_the_manuscript`
+caught it, and it is the reason that test asserts on the rendered manuscript
+rather than on the gate report: a report is what the system believed, and the
+manuscript is what it did.
+
+**Result.** The first live exchange to merge: four nodes from one answer — the
+author's paragraph, one machine premise and two machine objections — with two
+ungrounded authorities dropped and named, in 2m46s across four local models.
+
+**The pattern across §12.** Three defects, all invisible to the component tests
+and all found within minutes of assembling the pieces. §12.1 was a gate nothing
+routed to; §12.2 was two halves configured apart; §12.3 was an invariant that was
+right in isolation and wrong in composition. None of them were reachable by
+testing a component against its own idea of its interface.
