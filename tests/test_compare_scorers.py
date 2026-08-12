@@ -147,3 +147,36 @@ def test_the_runner_compares_and_prints(tmp_path: Path, capsys) -> None:  # type
     out = capsys.readouterr().out
     assert "authority claim(s)" in out
     assert "LexicalSupportScorer" in out
+
+
+# --------------------------------------------------------------------------- #
+# The length confound in the default scorer
+# --------------------------------------------------------------------------- #
+def test_lexical_support_cannot_fall_as_a_passage_grows() -> None:
+    """`lexical_support` is recall of the CLAIM's tokens in the passage, with no
+    penalty for what else the passage says. It is therefore monotonically
+    non-decreasing in passage length, which makes scores incomparable across
+    corpora whose passages differ in length (REMEDIATION §16).
+    """
+    from legal_research.citations.support import lexical_support
+
+    claim = "Model weights are a form of expression protected by the First Amendment."
+    short = "The court considered whether the statute was severable."
+    padded = short + " Model weights and expression and protection and amendments."
+    assert lexical_support(claim, padded) >= lexical_support(claim, short)
+
+
+def test_unrelated_text_can_clear_the_lexical_threshold_on_length_alone() -> None:
+    """A passage that says nothing about the claim passes if it happens to
+    contain the claim's vocabulary. This is why the corpus rebuild raised the
+    lexical column without any authority becoming better supported.
+    """
+    from legal_research.citations.support import LEXICAL_THRESHOLD, lexical_support
+
+    claim = "Model weights are a form of expression protected by the First Amendment."
+    unrelated = (
+        "The court considered whether the statute was severable. Model weights and "
+        "expression and protection and amendments arise in many unrelated contexts "
+        "throughout a long judicial opinion concerned entirely with procedure."
+    )
+    assert lexical_support(claim, unrelated) > LEXICAL_THRESHOLD

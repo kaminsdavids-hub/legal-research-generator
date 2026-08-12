@@ -1412,3 +1412,63 @@ OBSERVABLES D25's numbers should be read as a property of the corpus first.
 
 **Disposition.** `cite_for` stays in the code with `claim` as the default. The
 premise arm is retained as a measured negative result, not adopted.
+
+---
+
+## 16. The corpus was not the bottleneck either
+
+§15 predicted that headnote-style passages were why authorities fail to ground,
+and that real opinion text would fix it. All 34 case records were rebuilt from
+CourtListener: 326 passages at a median of 141 words, against 68 at a median of
+12. The prediction was wrong.
+
+**Every cell measured.** "Supported" is out of the authorities that arm proposed.
+
+| pairs (retrieval ran over) | scored against | lexical | embedding | nli |
+|---|---|---|---|---|
+| claim arm (headnotes) | headnotes | 1/14 | 1/14 | 1/14 |
+| claim arm (headnotes) | full text | 3/14 | 1/14 | 2/14 |
+| premise arm (headnotes) | headnotes | 4/15 | 5/15 | 1/15 |
+| premise arm (headnotes) | full text | 7/15 | 2/15 | 3/15 |
+| **claim arm (full text)** | **full text** | **1/10** | **1/10** | **0/10** |
+
+The last row is the one that answers the question: retrieval *and* scoring both
+over real opinion text, end to end, 4 live exchanges. **1 of 10 grounded** — the
+same rate as the headnote corpus produced. Fisher against the 1/14 baseline is
+not close to significant.
+
+**The apparent lexical gains are an artifact, and this is the important part.**
+`lexical_support` is *recall of the claim's tokens present in the passage*, with
+no penalty for what else the passage says, so it is monotonically non-decreasing
+in passage length. Replacing 12-word labels with 141-word passages raises every
+lexical score mechanically, and taking the max over 12 passages instead of 2
+raises it again. Demonstrated: a passage about statutory severability, padded
+with common legal vocabulary and saying nothing about the claim, scores **0.429
+against a 0.34 threshold**. Two tests now pin this.
+
+**The consequence is operational, not academic.** `support_scorer` defaults to
+`lexical`. Switching the default corpus to `openweights_fulltext.jsonl` while
+leaving that default in place would make the fabrication wall *weaker* — more
+citations would pass on vocabulary overlap alone. That is why
+`openweights.jsonl` remains the default here and the rebuilt file ships as an
+experimental arm. **Do not switch the corpus without switching the scorer.**
+
+**What is left, having eliminated three explanations.** Not the scorer (§14), not
+the prompt framing (§15), not the corpus (§16). What remains is that the
+retrieval-plus-model pipeline proposes citations that genuinely do not support
+the claims attached to them: Rice v. Paladin — a murder-manual aiding-and-abetting
+case — offered for a claim about the legibility of encrypted material; Brown v.
+EMA offered for a claim about commercial value against a passage on educating
+future generations. These are real cases cited for propositions they do not
+contain, which is precisely what OBSERVABLES M6 exists to catch.
+
+**So the gate is working and the generator is not.** A 5–10% authority survival
+rate is not a defect in the wall; it is a measurement of how often a 7–8B local
+model, plus vector retrieval over 40 records, produces a citation that survives
+contact with its own source. Read that way, every experiment in §14–§16 is
+consistent, and the number to try to move is the generator's, not the gate's.
+
+**Caveats.** One session per arm, 10–15 authorities each, one corpus, one
+hardware configuration. The false-positive readings are mine and not a lawyer's.
+None of this has been checked against a frontier model, which is the obvious
+control and the one I cannot run locally.

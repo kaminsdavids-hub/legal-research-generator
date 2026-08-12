@@ -1071,27 +1071,35 @@ observations.
   D6 and the soft-band rule interacting, and it is the strongest argument yet
   for calibrating those thresholds against real data.
 
-### D25. Authority survival is a property of the corpus before anything else
+### D25. The gate is working; the generator is not
 
-**1 of 19** in the first live sessions. Three explanations were on the list and
-two are now off it.
+**1 of 19** in the first live sessions, and four explanations have now been
+tested. It is **not the scorer** (§14: lexical, embedding and NLI all pass 1 of
+14), **not the prompt framing** (§15: premise-citing gives p = 0.33 and costs
+four-fifths of the objections), and **not the corpus** (§16: rebuilt from real
+opinion text, end-to-end survival 1 of 10 — unchanged).
 
-* **Not the scorer.** D7: lexical, embedding and NLI all pass 1 of 14 on the same
-  claims (REMEDIATION §14).
-* **Not the framing.** §15: asking the engine to cite for premises rather than
-  for the claim moved 1/14 to 4/15, which is Fisher p = 0.33 — noise at this n —
-  and its survivors were two truisms and a false positive, at the cost of
-  four-fifths of the objections.
+What remains is that the retrieval-plus-model pipeline proposes citations that
+genuinely do not support their claims. A 5–10% survival rate is a measurement of
+how often a 7–8B local model plus vector retrieval over 40 records produces a
+citation that survives contact with its own source. The fabrication wall refusing
+them is the wall working.
 
-**What remains, and it is the likely cause.** The corpus stores headnote-style
-topic labels rather than quotable text: 68 passages, median 12 words, 52 under
-20. A label cannot support a proposition, only share a subject with it, so every
-support check over this corpus degenerates into topic matching. That is why the
-three scorers behaved alike, why NLI returns near-zero almost everywhere, and why
-the passes that do occur are whichever claims share the most vocabulary.
+The number worth trying to move is the generator's. The obvious control — the
+same loop against a frontier model — has not been run.
 
-Fix the corpus before tuning anything else. Until real passage text is in place,
-these numbers measure the corpus and not the models, the gate, or the prompt.
+### D29. Do not switch to the full-text corpus without switching the scorer
+
+`lexical_support` is recall of the claim's tokens in the passage with no length
+penalty, so it is monotonically non-decreasing as passages grow. The rebuilt
+corpus has passages at a median of 141 words against 12, which raises every
+lexical score mechanically: a passage about statutory severability, padded with
+legal vocabulary and saying nothing about the claim, scores 0.429 against a 0.34
+threshold. `support_scorer` defaults to `lexical`, so adopting
+`openweights_fulltext.jsonl` as the default corpus while leaving that alone would
+make the fabrication wall weaker, not stronger. Enforced by
+`test_lexical_support_cannot_fall_as_a_passage_grows` and
+`test_unrelated_text_can_clear_the_lexical_threshold_on_length_alone`.
 
 ### D28. Groundability and informativeness pull against each other
 
