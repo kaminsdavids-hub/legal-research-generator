@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from evals.harness import (  # noqa: E402
+    PLATEAU_DELTA,
     EvalSet,
     JudgeVerdict,
     LoggingRetriever,
@@ -269,7 +270,7 @@ def main() -> int:
     history = sorted(out_dir.glob(f"{eval_set.name}-*.json"))
     means = [json.loads(p.read_text())["overall_mean"] for p in history]
     if has_plateaued(means):
-        print(f"PLATEAU: overall mean moved < 0.2 across the last 3 rounds {means[-4:]}")
+        print(f"PLATEAU: overall mean moved < {PLATEAU_DELTA} across the last 3 runs {means[-4:]}")
     print(f"elapsed      : {(time.time() - started) / 60:.1f} min")
     return 0
 
