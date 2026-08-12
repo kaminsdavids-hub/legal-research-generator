@@ -1198,3 +1198,32 @@ would have shipped and never once activated. Enforced by
 `test_evidence_accumulates_across_manuscripts`, which drives three manuscripts
 through the CLI and asserts engagement becomes measurable, and by
 `test_the_journal_persists_separately_from_the_manuscript`.
+
+### M48. The author's channel is the only way into the graph
+
+`POST /answer` writes a HUMAN node because the request *is* the author speaking.
+There is deliberately no endpoint accepting a node, a patch or a provenance: a
+client able to post machine-drafted text as human-authored would defeat the
+record the whole system keeps, and no care at the UI layer would restore it.
+Enforced by `test_there_is_no_endpoint_that_accepts_a_node_or_a_provenance`,
+which inspects the route table rather than a hand-written list, and
+`test_an_answer_becomes_a_human_node`.
+
+### M49. Session ids are validated before they reach the filesystem
+
+Each session is a file named from a client-supplied id. Ids are generated
+server-side and matched against `^[0-9a-f]{12}$` on the way back in, so a
+traversal attempt is refused before any path is built. A local-first tool is
+still a tool with an HTTP server in it. Enforced by
+`test_a_crafted_session_id_never_reaches_the_filesystem` (parameterised over
+traversal, encoded traversal, and malformed ids) and
+`test_a_traversal_id_cannot_write_outside_the_session_directory`, which asserts
+on the filesystem rather than the status code.
+
+### M50. A refused patch is a 200 with reasons
+
+The author asked a question and got an answer about their work, which is a
+successful interaction whatever the merge decided; a 4xx would tell the client
+something went wrong when nothing did. The question stays pending, matching M37.
+Enforced by `test_a_refused_patch_returns_200_with_its_reasons` and
+`test_a_refused_answer_leaves_the_question_pending`.
