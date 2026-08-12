@@ -162,7 +162,7 @@ def _add(
         result.refused.append(f"proposition carries a citation string {hits}: {text[:80]}")
         return
 
-    node_type, citation = _classify(slot, result, text)
+    node_type, citation = _classify(slot, result, text, relation)
     if node_type is None:
         return
 
@@ -172,7 +172,7 @@ def _add(
 
 
 def _classify(
-    slot: CitationSlot, result: Adaptation, text: str
+    slot: CitationSlot, result: Adaptation, text: str, relation: EdgeType
 ) -> tuple[NodeType | None, str]:
     """Decide what a proposition becomes, and whether it may carry its citation."""
     if slot.status is not SlotStatus.VERIFIED or not slot.normalized_cite:
@@ -180,7 +180,14 @@ def _classify(
         # and only a lookup returning a cluster moves it to `verified`. Anything
         # short of that enters as a plain premise carrying no citation, so an
         # unconfirmed cite cannot be read off the manuscript as a real one.
-        return NodeType.PREMISE, ""
+        #
+        # An antithesis proposition is an objection, and the node must say so.
+        # Typing it as a premise leaves the graph describing an attack as
+        # support, which is precisely the mismatch the coherence gate exists to
+        # catch — the adapter should not be manufacturing them.
+        return (
+            NodeType.OBJECTION if relation is EdgeType.ATTACKS else NodeType.PREMISE
+        ), ""
 
     if NOT_OPERATIVE in slot.note:
         # A rescinded rule that verified is still rescinded. `Node` has no note

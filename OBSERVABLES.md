@@ -649,6 +649,53 @@ resolved by having been answered. Enforced by
 `test_every_gap_kind_can_absorb_an_answer` and
 `test_a_gap_needing_an_edit_says_the_answer_did_not_close_it`.
 
+### M24. Coherence blocks on structure, and only advises on semantics
+
+The findings carry two severities and `passed` reads only the blocking ones.
+
+**Blocking** — `SELF_GROUNDING`, `DANGLING_EDGE`, `CONTRADICTORY_RELATION`,
+`DISCONNECTED`, `REPLY_TO_NOTHING`. Each is decidable from the graph's shape
+alone. No model is consulted and none can be talked around, which is what makes
+them safe to merge on.
+
+**Advisory** — `SUPPORT_THAT_CONTRADICTS`, `ATTACK_THAT_AGREES`. Whether a node
+marked SUPPORTS in fact contradicts what it supports is a question only an
+entailment critic can answer, and this repository has been burned twice by
+trusting one uncalibrated: the NLI heuristic scored `constitutional` against
+`unconstitutional` as entailment (REMEDIATION §9.5), and the judge rated pure
+failure placeholders 8.00/10 (§11.2). A model's opinion does not veto the
+author's work. Enforced by `test_support_that_contradicts_is_reported_but_does_not_block`,
+`test_every_incoherence_has_a_severity` (iterates the enum, so a new kind with no
+severity fails at review time rather than at report time) and
+`test_a_semantic_finding_never_flips_a_patch_to_failing`.
+
+### M25. The gate does not merge what it is judging
+
+Cycle detection needs the merged result, so it builds a trial view rather than
+mutating the graph. A gate with a side effect is a gate that has already merged
+whatever it was asked to judge. Enforced by
+`test_the_gate_does_not_merge_what_it_is_judging`.
+
+### M26. A merge is only answerable for what it introduces
+
+A support/attack contradiction already sitting in the graph does not fail the
+next patch; blocking on it would make the graph unmergeable forever. Likewise the
+opening node of an empty graph is exempt from `DISCONNECTED` — there is nothing
+yet to connect to — but a *first patch of several* nodes must still connect them.
+Enforced by `test_a_contradiction_already_in_the_graph_is_not_this_merges_fault`,
+`test_the_opening_node_of_an_empty_graph_is_exempt` and
+`test_a_first_patch_of_several_nodes_must_still_connect_them`.
+
+### M27. An antithesis proposition enters as an objection
+
+The adapter types it `OBJECTION`, not `PREMISE`. A premise carrying an ATTACKS
+edge leaves the graph describing an attack as support — exactly the mismatch M24
+exists to catch, and the adapter must not be manufacturing them. Cited authority
+stays `AUTHORITY` whichever side deploys it, so the grounding gate can still
+check the citation. Enforced by
+`test_an_antithesis_proposition_becomes_an_objection` and
+`test_cited_authority_stays_an_authority_whichever_side_deploys_it`.
+
 ---
 
 ## Maieutic — Designed, not yet enforced
@@ -713,3 +760,19 @@ checks that support exists, not that an ATTACKS edge really attacks. Classifying
 the answer instead of the question would need a critic reading the author's
 prose, with the self-satisfaction risk that carries; the alternative is letting
 the author set the type, which is a UI decision not yet made.
+
+### D13. Promoting an advisory finding to blocking needs calibration, not a code change
+
+`_SEVERITY` is a table, so flipping `SUPPORT_THAT_CONTRADICTS` to BLOCKING is one
+line. Doing it without first measuring the critic's false-positive rate on real
+manuscript nodes would hand an uncalibrated model a veto over the author's work,
+which is the failure §9.5 and §11.2 both record. The measurement needed is the
+same one the dialectic module's independence thresholds got (§10.3): score two
+real populations, and look for a gap.
+
+### D14. Coherence checks relations, not reasoning
+
+The gate can tell that an edge's asserted relation is contradicted by the text.
+It cannot tell whether a premise that does not contradict its target actually
+*supports* it — most irrelevant material is neutral, not contradictory, and
+neutral passes. A premise that is merely beside the point merges cleanly.

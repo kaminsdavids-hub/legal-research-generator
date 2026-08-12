@@ -256,6 +256,30 @@ def test_the_two_sides_land_on_opposite_relations() -> None:
     assert relations == {"Support.": EdgeType.SUPPORTS, "Objection.": EdgeType.ATTACKS}
 
 
+def test_an_antithesis_proposition_becomes_an_objection() -> None:
+    """A premise carrying an ATTACKS edge leaves the graph describing an attack
+    as support — the mismatch the coherence gate exists to catch, which the
+    adapter should not be manufacturing.
+    """
+    result = adapt(
+        _question(GapKind.UNSUPPORTED_CLAIM),
+        "The answer.",
+        _turn(thesis=[_slot("Support.")], antithesis=[_slot("Objection.")]),
+    )
+    assert [n.text for n in _typed(result, NodeType.OBJECTION)] == ["Objection."]
+    assert [n.text for n in _typed(result, NodeType.PREMISE) if n.id != result.answer_id] == [
+        "Support."
+    ]
+
+
+def test_cited_authority_stays_an_authority_whichever_side_deploys_it() -> None:
+    slot = _slot(
+        "A holding.", status=SlotStatus.VERIFIED, normalized_cite="176 F.3d 1132"
+    )
+    result = adapt(_question(), "The answer.", _turn(antithesis=[slot]))
+    assert len(_typed(result, NodeType.AUTHORITY)) == 1
+
+
 def test_an_empty_proposition_is_skipped_without_a_node() -> None:
     result = adapt(_question(), "The answer.", _turn(thesis=[_slot("   ")]))
     assert len(result.patch.nodes) == 1
