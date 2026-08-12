@@ -893,13 +893,19 @@ manuscript nodes exists yet. Tests pin the *bands' behaviour* using a stub
 embedder with exact vectors, so they will keep passing whatever the numbers are.
 Calibrate before trusting a merge decision to them.
 
-### D7. Grounding against the real support scorer
+### D7. Answered: the scorer is not the bottleneck
 
-`tests/test_maieutic_service.py` exercises `CorpusCitationVerifier` against a
-fake scorer that mirrors the real signature. The real `EmbeddingSupportScorer`
-and `NliSupportScorer` need the GPU extra and have never been run through this
-path. A signature drift in `legal_research.citations.support` would be caught;
-a semantic mismatch in what the scorer considers support would not.
+Run and closed. `evals/compare_support_scorers.py` re-scored the 14 authority
+claims from a live session under all three scorers. Every one passed **exactly
+one of fourteen** — and no two agreed on *which*. Scores differed on all 14 rows,
+so this is three real scorers, not one measured three times. See REMEDIATION §14.
+
+What remains open is narrower and better posed: the support check's verdict on
+any individual authority is almost entirely method-dependent (zero overlap in the
+positive class across three methods), while the aggregate rate is stable. The
+stability is a coincidence of thresholds, not agreement. `SEMANTIC_THRESHOLD =
+0.55` sits above almost the whole embedding distribution observed here
+(0.11–0.57), which is D6 and D16's problem appearing in a third place.
 
 ### D8. `build_grounding_gate` has no test
 
@@ -1065,17 +1071,30 @@ observations.
   D6 and the soft-band rule interacting, and it is the strongest argument yet
   for calibrating those thresholds against real data.
 
-### D25. Almost no machine-proposed authority survives grounding
+### D25. Almost no machine-proposed authority survives, and the scorer is not why
 
-**1 of 19** across the first two live sessions (S2: 1/14, S1: 0/5). The
-manuscripts the loop produced carry objections and premises but essentially no
-verified authority. Three explanations are live and this run does not separate
-them: the models may be citing badly; the support scorer is `LexicalSupportScorer`
-with a 0.34 cut, and lexical overlap is a crude proxy for whether a passage
-supports a claim; and the corpus is 41 records. **D7 is the experiment that would
-tell them apart** — the embedding and NLI scorers have never been run through
-this path. Until that is done, nothing here says whether the fabrication wall is
-working well or merely working.
+**1 of 19** across the first two live sessions. D7 has now eliminated one of the
+three candidate explanations: swapping in embedding and NLI scorers leaves the
+rate unchanged at 1 of 14 on the same claims.
+
+Inspecting the survivors points at a **fourth** explanation that was not on the
+original list, and it is structural rather than a matter of model quality. The
+two lexical/embedding passes both matched a *model weights* claim to Bernstein's
+passage about *encryption source code*; the NLI pass matched an unrelated pair
+outright. On the evidence, all three look like false positives, and true survival
+may be nearer 0 than 1 in 14.
+
+The structural reason: **an AUTHORITY node attached to the paper's novel claim
+cannot be grounded, by construction.** If the corpus supported that claim it
+would be COMMONPLACE under the banality gate's own definition, and the paper
+would have nothing to argue. The models are attaching citations to the extensions
+rather than to the established propositions the extensions rest on. That is a
+prompt-and-design problem in what the dialectic engine is asked to cite for, not
+a threshold to tune.
+
+Caveats that matter: one session, 14 claims, a 40-record corpus, and the reading
+that Bernstein does not reach weights is a legal judgement, defensible but mine.
+A second session and a lawyer's eye would both strengthen it.
 
 ### D26. The loop generates open problems faster than it closes them
 

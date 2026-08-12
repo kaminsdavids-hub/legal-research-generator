@@ -1288,3 +1288,59 @@ at all, because `Gates.live` never wires an entailment critic (D27).
 **Cost.** Roughly four to five minutes per answer on this hardware — 236s and
 294s per exchange respectively. A ten-answer session is an hour. That is a
 constraint on how the loop can be used, not an implementation detail.
+
+---
+
+## 14. D7: the support scorer is not why authorities fail
+
+**Question.** §13 measured 1-in-19 authority survival and left three explanations
+unseparated: the models cite badly, the corpus is small, or `LexicalSupportScorer`
+is too crude a proxy for support. This isolates the third.
+
+**Method.** One live session (S2, 4 exchanges, 14 proposed authorities, 18
+minutes of model time) with the harness recording each authority's claim and
+citation. The same 14 pairs were then re-scored under all three scorers — no
+models re-run, so the scorer is the only thing that varies.
+
+**The trap, avoided deliberately.** `build_support_scorer` silently returns
+`LexicalSupportScorer` when the gpu extra is missing, and `sentence_transformers`
+was in fact absent. Setting `LRG_SUPPORT_SCORER=embedding` and reporting "no
+difference" would have measured lexical three times and produced a confident
+wrong answer — the §11.6 and §11.11c shape again. The comparison therefore checks
+each scorer's concrete class against what was requested and raises rather than
+falling back. `sentence-transformers 5.7.0` was installed from the declared extra
+first.
+
+**Result.**
+
+| scorer | class | threshold | supported |
+|---|---|---|---|
+| lexical | LexicalSupportScorer | 0.34 | 1 / 14 |
+| embedding | EmbeddingSupportScorer | 0.55 | 1 / 14 |
+| nli | NliSupportScorer | 0.55 | 1 / 14 |
+
+Scores differed on **all 14 rows** (0 identical), so these are three real
+scorers. But the three passes are three *different* claims: pairwise agreement on
+the positive class is **zero**. The stable aggregate is a coincidence of where
+each threshold happens to fall, not agreement about what support is.
+
+**The finding that was not on the list.** Inspecting the three survivors, all
+look like false positives. Lexical and embedding both matched a *model weights*
+claim to Bernstein's passage about *encryption source code* — the passage
+supports the source-code proposition, and extending it to weights is exactly what
+the paper is arguing. NLI scored 0.969 on a pair that is simply unrelated.
+
+That points at a structural cause: **an AUTHORITY node attached to the paper's
+novel claim cannot be grounded, by construction.** If the corpus supported the
+claim it would be COMMONPLACE under the banality gate's own definition, and the
+paper would have nothing to say. The dialectic engine is attaching citations to
+the extensions rather than to the established propositions the extensions rest
+on. That is a question of what the engine is asked to cite for, not a threshold
+to tune — and it is why raising or lowering a cut would not have helped.
+
+**What this does and does not establish.** It closes D7: the scorer is not the
+bottleneck, and nobody should spend more time tuning it. It does not establish
+the fourth explanation, which rests on one session, 14 claims, a 40-record
+corpus, and a legal reading of Bernstein that is defensible but mine. The next
+measurement worth taking is whether the engine cites differently when asked for
+the *premises* of a claim rather than for the claim itself.
