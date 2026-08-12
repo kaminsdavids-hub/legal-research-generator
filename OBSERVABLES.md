@@ -696,6 +696,50 @@ check the citation. Enforced by
 `test_an_antithesis_proposition_becomes_an_objection` and
 `test_cited_authority_stays_an_authority_whichever_side_deploys_it`.
 
+### M28. Banality compares against the field, novelty against the manuscript
+
+A proposition the sources already state is not a contribution however absent it
+is from the paper. The novelty gate compares a node to the graph; this one
+compares it to the corpus. Enforced by
+`test_a_claim_the_sources_already_state_is_commonplace`.
+
+Without a corpus the limb does not run and `method` stays `None` — reporting a
+claim as original because nothing was checked would be a stronger statement than
+the gate is entitled to. Enforced by
+`test_without_a_corpus_no_claim_about_the_field_is_made` and
+`test_a_commonplace_verdict_records_how_it_was_reached`.
+
+### M29. Only vacuity blocks
+
+A claim whose content words are *entirely* hedges asserts nothing — that is
+decidable by counting, not by asking a model. Everything else reports, for two
+different reasons that both matter: legal writing hedges as a professional norm,
+so blocking "this may be the better view" would harm the manuscript the gate
+protects; and corpus similarity is method-dependent and uncalibrated. `BLOCKING`
+is a table the test iterates, so widening it is a deliberate edit. Enforced by
+`test_a_claim_that_is_all_hedge_asserts_nothing_and_is_blocked`,
+`test_a_mostly_hedged_claim_is_reported_but_merges` and
+`test_vacuity_is_the_only_blocking_verdict`.
+
+### M30. Only claim-bearing nodes are judged for banality
+
+A paper needs commonplace material: background, setup, statements of existing
+doctrine. A PREMISE or AUTHORITY being unoriginal is correct, not a defect, and
+assessing them would make the manuscript unwritable. The rule runs over THESIS
+and ORIGINAL — the nodes claiming to be the contribution. Enforced by
+`test_background_material_is_supposed_to_be_unoriginal` and
+`test_a_vacuous_premise_does_not_block_a_merge`.
+
+### M31. The gate feeds the question policy
+
+`PatchBanality.barren_sections()` names sections where a patch landed no
+substantive claim, which is what `SocraticEngine.ask(avoid_sections=...)`
+consumes: somewhere the author is producing only throat-clearing and received
+wisdom is somewhere to stop asking. Per-patch and therefore noisy — a caller
+should accumulate across cycles rather than act on one. Enforced by
+`test_a_section_producing_only_hedge_is_reported_as_barren` and
+`test_a_section_with_one_real_claim_is_not_barren`.
+
 ---
 
 ## Maieutic — Designed, not yet enforced
@@ -776,3 +820,31 @@ The gate can tell that an edge's asserted relation is contradicted by the text.
 It cannot tell whether a premise that does not contradict its target actually
 *supports* it — most irrelevant material is neutral, not contradictory, and
 neutral passes. A premise that is merely beside the point merges cleanly.
+
+### D15. The banality gate is the weakest of the four, deliberately
+
+It blocks on one decidable thing and reports the rest. That is the honest
+position given what is uncalibrated here, but it means the gate cannot enforce
+the property it is named for: a confident truism passes. "Context matters",
+"there are arguments on both sides", "the doctrine is complex" all carry real
+content words, have no close corpus twin, and hedge very little. Catching them
+needs a critic with a sense of what is worth saying, which is a judgment no
+threshold in this file encodes.
+
+### D16. `HEDGED_AT` and `COMMONPLACE_AT` are uncalibrated
+
+0.34 and 0.88, chosen by judgement like the novelty thresholds and with the same
+missing prerequisite: no corpus of accepted-versus-rejected manuscript claims
+exists to set them against. The tests pin the *verdicts* using worked examples
+and a stub embedder, so they will keep passing whatever the numbers are. One
+worked example ("Weights may arguably be expressive under the First Amendment")
+lands at 0.333 against a 0.34 cut — close enough that a small wording change
+flips its verdict, which is what an uncalibrated threshold looks like from the
+inside.
+
+### D17. The hedge list is English legal-academic prose only
+
+`HEDGES` is a hand-maintained word set. It has no notion of hedging by
+construction ("one might think that some would argue"), and a hedge it does not
+list reads as content. Like the reporter table in the dialectic module, it is
+maintained rather than derived.
