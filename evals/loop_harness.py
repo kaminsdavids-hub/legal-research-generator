@@ -76,6 +76,10 @@ class ExchangeRecord:
     #: AUTHORITY nodes the exchange proposed, and how many cleared grounding.
     authorities_proposed: int = 0
     authorities_grounded: int = 0
+    #: Every proposed authority: its claim, its citation, and whether it merged.
+    #: Counts alone say a wall held; the pairs say what it held against, and are
+    #: what makes a scorer comparison possible without re-running the models.
+    authorities: list[dict[str, Any]] = field(default_factory=list)
     dropped: int = 0
     refusals: list[str] = field(default_factory=list)
     advisories: list[str] = field(default_factory=list)
@@ -233,6 +237,14 @@ def _measure(
         # making: the gate's verdict and the merge can disagree, and what the
         # manuscript contains is what happened.
         record.authorities_grounded = sum(1 for n in proposed if n.id in session.graph.nodes)
+        record.authorities = [
+            {
+                "citation": n.citation,
+                "claim": n.text,
+                "grounded": n.id in session.graph.nodes,
+            }
+            for n in proposed
+        ]
 
     for node_id in result.added:
         node = session.graph.nodes[node_id]
