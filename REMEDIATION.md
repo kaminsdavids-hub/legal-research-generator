@@ -1344,3 +1344,71 @@ the fourth explanation, which rests on one session, 14 claims, a 40-record
 corpus, and a legal reading of Bernstein that is defensible but mine. The next
 measurement worth taking is whether the engine cites differently when asked for
 the *premises* of a claim rather than for the claim itself.
+
+---
+
+## 15. Citing for premises: a measured negative result
+
+**Hypothesis (from §14).** The engine was attaching authority to the paper's
+novel claims, which by construction no source supports. Asking it to cite for the
+*established propositions* the claim rests on should raise authority survival.
+
+**Method.** Same session, same answers, same corpus, same four models; only
+`debate_prompt` differs. The claim arm has a replication — two independent live
+runs both produced exactly 14 authorities with 1 grounded — which is what makes a
+single premise-arm run readable at all.
+
+| | claim | premise |
+|---|---|---|
+| authorities grounded | 1 / 14 | 4 / 15 |
+| machine nodes merged | 8 | 9 |
+| **objections** | **5** | **1** |
+| open problems raised | 3 | 0 |
+| wall time | 1098s | 758s |
+
+**The headline is not real.** 1/14 against 4/15 is Fisher two-sided **p = 0.33**.
+At n≈14 per arm this is indistinguishable from noise, and 7% → 27% should not be
+quoted as an effect.
+
+**The survivors are worse, not better.** All four premise-arm passes reduce to
+two distinct claims, each appearing twice:
+
+* *"The First Amendment protects freedom of speech and expression"* matched to
+  Keyishian's *"Academic freedom as a special concern of the First Amendment."*
+  True, and so general it would match almost any First Amendment passage. This is
+  what "cite for established propositions" degenerates into.
+* *"Expression must be intended for public dissemination to qualify as protected
+  speech"* matched to Bernstein's *"Encryption source code as expression
+  protected by the First Amendment."* The passage does not say this — the claim
+  adds a requirement the source never states. A false positive, and the same
+  Bernstein passage that produced the claim arm's false positive.
+
+**And it cost the thing the loop is for.** Objections fell from 5 to 1 and open
+problems from 3 to 0. Telling the models not to argue the claim removed most of
+the pressure, which is the loop's entire product. Even had the grounding gain
+been real, this trade is a bad one.
+
+**The tension the experiment actually exposed.** Groundability and
+informativeness pull against each other. A proposition general enough to be
+supported by an existing source is close to a truism; a proposition specific
+enough to advance the argument is an extension no source states. Prompting cannot
+resolve that, because it is a property of the corpus and the task, not of the
+wording.
+
+**The likelier bottleneck, and the next thing to fix.** `openweights.jsonl`
+stores **headnote-style topic labels, not quotable text**: 68 passages, median 12
+words, 52 of them under 20. "Encryption source code as expression protected by
+the First Amendment" is a subject heading. A 12-word label cannot support a
+specific proposition — it can only topic-match, which is exactly the behaviour
+observed: everything sharing First Amendment vocabulary scores moderately,
+nothing scores as entailment, and whichever claim shares the most words wins. It
+also explains why all three scorers behaved alike in §14 and why NLI returned
+near-zero for almost every pair.
+
+Before any further prompt or threshold work, the corpus needs real passage text —
+quotable paragraphs from the opinions rather than summaries of them. Until then
+no support check over this corpus can measure more than topic overlap, and
+OBSERVABLES D25's numbers should be read as a property of the corpus first.
+
+**Disposition.** `cite_for` stays in the code with `claim` as the default. The
+premise arm is retained as a measured negative result, not adopted.

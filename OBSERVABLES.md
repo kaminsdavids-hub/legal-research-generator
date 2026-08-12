@@ -1071,30 +1071,37 @@ observations.
   D6 and the soft-band rule interacting, and it is the strongest argument yet
   for calibrating those thresholds against real data.
 
-### D25. Almost no machine-proposed authority survives, and the scorer is not why
+### D25. Authority survival is a property of the corpus before anything else
 
-**1 of 19** across the first two live sessions. D7 has now eliminated one of the
-three candidate explanations: swapping in embedding and NLI scorers leaves the
-rate unchanged at 1 of 14 on the same claims.
+**1 of 19** in the first live sessions. Three explanations were on the list and
+two are now off it.
 
-Inspecting the survivors points at a **fourth** explanation that was not on the
-original list, and it is structural rather than a matter of model quality. The
-two lexical/embedding passes both matched a *model weights* claim to Bernstein's
-passage about *encryption source code*; the NLI pass matched an unrelated pair
-outright. On the evidence, all three look like false positives, and true survival
-may be nearer 0 than 1 in 14.
+* **Not the scorer.** D7: lexical, embedding and NLI all pass 1 of 14 on the same
+  claims (REMEDIATION §14).
+* **Not the framing.** §15: asking the engine to cite for premises rather than
+  for the claim moved 1/14 to 4/15, which is Fisher p = 0.33 — noise at this n —
+  and its survivors were two truisms and a false positive, at the cost of
+  four-fifths of the objections.
 
-The structural reason: **an AUTHORITY node attached to the paper's novel claim
-cannot be grounded, by construction.** If the corpus supported that claim it
-would be COMMONPLACE under the banality gate's own definition, and the paper
-would have nothing to argue. The models are attaching citations to the extensions
-rather than to the established propositions the extensions rest on. That is a
-prompt-and-design problem in what the dialectic engine is asked to cite for, not
-a threshold to tune.
+**What remains, and it is the likely cause.** The corpus stores headnote-style
+topic labels rather than quotable text: 68 passages, median 12 words, 52 under
+20. A label cannot support a proposition, only share a subject with it, so every
+support check over this corpus degenerates into topic matching. That is why the
+three scorers behaved alike, why NLI returns near-zero almost everywhere, and why
+the passes that do occur are whichever claims share the most vocabulary.
 
-Caveats that matter: one session, 14 claims, a 40-record corpus, and the reading
-that Bernstein does not reach weights is a legal judgement, defensible but mine.
-A second session and a lawyer's eye would both strengthen it.
+Fix the corpus before tuning anything else. Until real passage text is in place,
+these numbers measure the corpus and not the models, the gate, or the prompt.
+
+### D28. Groundability and informativeness pull against each other
+
+Surfaced by §15 rather than designed. A proposition general enough for an
+existing source to support is close to a truism; a proposition specific enough to
+advance the argument is an extension no source states. The banality gate and the
+grounding gate therefore squeeze AUTHORITY nodes from both sides, and no prompt
+resolves it — it is a property of the task. Worth stating because it bounds what
+the citation machinery can ever deliver: authority for the *steps*, not for the
+conclusion.
 
 ### D26. The loop generates open problems faster than it closes them
 
