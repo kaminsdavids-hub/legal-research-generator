@@ -53,10 +53,13 @@ test-dialectic:
 		tests/test_maieutic_loop.py -v
 
 test-eval-harness:
-	python -m pytest tests/test_eval_harness.py -q
+	python -m pytest tests/test_eval_harness.py tests/test_loop_harness.py -q
 
 eval:
 	python evals/run_eval.py
+
+loop-eval:
+	python evals/run_loop_eval.py
 
 demo:
 	python -m legal_research.demo

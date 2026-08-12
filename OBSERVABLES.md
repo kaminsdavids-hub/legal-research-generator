@@ -1024,3 +1024,43 @@ asking in the order that helps an author think. A paper is written by developing
 one line of argument, and this engine will happily jump between sections because
 a cycle in one outranks an unanswered objection in another. Whether that is
 disruptive enough to matter is a question for someone using it, not a test.
+
+### D22. The loop eval's authors are stand-ins
+
+`evals/loop_sessions.json` holds scripted answers written *outside* the loop, so
+the machinery faces text it did not produce — which is what stops the harness
+being the self-satisfying arrangement that has already cost this repository three
+gates. What it establishes is that the loop works on plausible input. It does not
+establish that the loop helps a real author: nothing here measures whether the
+questions were worth answering, whether the objections sharpened the argument, or
+whether the paper got better. Those need a person writing a real paper. The
+fixture format carries a `source` field on every session and the reports print
+it, so a run over stand-ins and a run over a real transcript are never silently
+compared.
+
+### D23. Offline, the loop is only two questions deep
+
+Measured, not designed: `make loop-eval` reports both fixture sessions running
+dry after two exchanges, with three of five and two of four answers unused. The
+gap sequence offline is fixed — an uncontested thesis, then the unanswered attack
+the author's own answer created — and then there is nothing left to ask. **The
+loop's depth is almost entirely a function of the machine's pressure**, because
+objections are what create further gaps. Whether the live loop sustains depth
+across a whole paper is the measurement the harness now exists to take.
+
+### D24. Two gate weaknesses the first run made concrete
+
+Both were already recorded as design limits; the harness turned them into
+observations.
+
+* **A confident truism merges.** "Context matters a great deal and there are
+  arguments on both sides" clears the banality gate, because it has real content
+  words and hedges very little. D15 predicted this; `S3-thin` now demonstrates it
+  on every run.
+* **A near-verbatim restatement can squeak under the hard threshold.** "The
+  regulatory treatment of open weights is unsettled at present" against a thesis
+  of "The regulatory treatment of open weights is unsettled" scores just under
+  `HARD = 0.92` on lexical overlap, lands in the soft band, and — with no
+  entailment critic configured offline — is admitted as unadjudicated. This is
+  D6 and the soft-band rule interacting, and it is the strongest argument yet
+  for calibrating those thresholds against real data.
