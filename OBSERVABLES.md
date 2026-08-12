@@ -740,6 +740,47 @@ should accumulate across cycles rather than act on one. Enforced by
 `test_a_section_producing_only_hedge_is_reported_as_barren` and
 `test_a_section_with_one_real_claim_is_not_barren`.
 
+### M32. Every node renders exactly once
+
+This is the payoff the graph representation exists for: a claim reachable by two
+paths is written once, not restated because the writer forgot it had been said.
+Non-repetition is structural, not a matter of care. Enforced by
+`test_a_node_reachable_by_two_paths_is_written_once` and
+`test_every_node_is_rendered_exactly_once`.
+
+### M33. Rendering is deterministic and involves no model
+
+The author's own sentences are the prose; this module contributes ordering,
+structural labels and disclosure, and never composes a claim. A model writing the
+prose would reintroduce every fabrication risk the gates prevent, at the last
+step, where nothing downstream checks it. `DEPENDS_ON` decides what must be read
+first; ties break on node type and then on id, so the same graph always renders
+identically — a renderer that shuffles equivalent nodes makes every draft diff
+unreadable. Enforced by `test_the_same_graph_always_renders_the_same_way`,
+`test_what_the_reader_must_accept_first_comes_first` and
+`test_the_authors_words_are_not_rewritten`.
+
+### M34. Two disclosures no audience can suppress
+
+**An unverified citation never renders as clean authority** — marked in the
+manuscript view, not only in review. A reader must not have to know which view
+they are reading to know what has been confirmed. **Unanswered objections are
+declared** in their own section: a paper that states its strongest objections and
+answers them is the point, and one that states them and quietly moves on is the
+failure the graph exists to make visible. Enforced by
+`test_an_unverified_citation_never_renders_as_clean_authority` (which iterates
+`Audience`) and `test_unanswered_objections_are_declared_not_buried`.
+
+A manuscript in which no node was written by the author says so, because that is
+a fact about the paper — `test_a_manuscript_with_no_authored_content_says_so`.
+
+### M35. A self-grounding graph renders, and reports the cycle
+
+The coherence gate blocks patches that create a `DEPENDS_ON` cycle, but a graph
+loaded from disk can carry one. No reading order is correct, so the renderer
+emits the nodes in a stable order and warns; hanging or silently dropping them
+would be worse. Enforced by `test_a_self_grounding_graph_renders_rather_than_hanging`.
+
 ---
 
 ## Maieutic — Designed, not yet enforced
@@ -848,3 +889,21 @@ inside.
 construction ("one might think that some would argue"), and a hedge it does not
 list reads as content. Like the reporter table in the dialectic module, it is
 maintained rather than derived.
+
+### D18. Section order is sorted, not authored
+
+The graph records which section a node belongs to but not what order the sections
+go in, so `render.sections` puts unsectioned material first and sorts the rest
+alphabetically. That is deterministic, which is what the tests check, and it is
+not an outline. A real manuscript needs an authored section order, and nothing
+here supplies one.
+
+### D19. The prose is assembled, not written
+
+Each node becomes its own paragraph. There are no transitions, no subordination,
+no argumentative connective tissue beyond the structural labels — a rendered
+graph reads as a sequence of assertions rather than as an essay. This is the
+honest consequence of refusing a model at this step, and it means the render
+output is a faithful view of the argument rather than a draft of the paper.
+Closing that gap without reintroducing fabrication risk is an open design
+question, not a TODO.

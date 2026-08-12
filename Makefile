@@ -49,7 +49,7 @@ test-dialectic:
 		tests/test_maieutic_novelty.py tests/test_maieutic_grounding.py \
 		tests/test_maieutic_service.py tests/test_maieutic_socratic.py \
 		tests/test_maieutic_adapter.py tests/test_maieutic_coherence.py \
-		tests/test_maieutic_banality.py -v
+		tests/test_maieutic_banality.py tests/test_maieutic_render.py -v
 
 test-eval-harness:
 	python -m pytest tests/test_eval_harness.py -q
