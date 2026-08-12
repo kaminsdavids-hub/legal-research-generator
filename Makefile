@@ -45,7 +45,7 @@ typecheck-dialectic:
 	python -m mypy modules/dialectic modules/maieutic evals
 
 test-dialectic:
-	python -m pytest tests/test_dialectic.py tests/test_maieutic_graph.py -v
+	python -m pytest tests/test_dialectic.py tests/test_maieutic_graph.py tests/test_maieutic_novelty.py -v
 
 test-eval-harness:
 	python -m pytest tests/test_eval_harness.py -q
