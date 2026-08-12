@@ -152,6 +152,19 @@ class Settings(BaseSettings):
     dialectic_antithesis_model: str = "llama3.1:8b"
     dialectic_synthesis_model: str = "gemma3:4b"
     dialectic_nli_model: str = "nemotron-3-nano:4b"
+    # Per-role endpoint overrides, empty meaning "use dialectic_base_url and
+    # llm_api_key". One shared base URL made a mixed lineup impossible: a role
+    # could not be pointed at a hosted API while the others stayed on Ollama, so
+    # comparing this pipeline against a frontier model could not be configured at
+    # all. Existing single-endpoint setups are unaffected.
+    dialectic_thesis_base_url: str = ""
+    dialectic_antithesis_base_url: str = ""
+    dialectic_synthesis_base_url: str = ""
+    dialectic_nli_base_url: str = ""
+    dialectic_thesis_api_key: str = ""
+    dialectic_antithesis_api_key: str = ""
+    dialectic_synthesis_api_key: str = ""
+    dialectic_nli_api_key: str = ""
     dialectic_timeout_seconds: float = 120.0
     # CourtListener v4 citation-lookup. Slots stay NOT_FOUND without a token;
     # the module never marks a slot VERIFIED on an unverified path.

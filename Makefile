@@ -54,13 +54,17 @@ test-dialectic:
 
 test-eval-harness:
 	python -m pytest tests/test_eval_harness.py tests/test_loop_harness.py \
-		tests/test_compare_scorers.py tests/test_fetch_opinion_text.py -q
+		tests/test_compare_scorers.py tests/test_fetch_opinion_text.py \
+		tests/test_preflight_models.py -q
 
 eval:
 	python evals/run_eval.py
 
 loop-eval:
 	python evals/run_loop_eval.py
+
+preflight:
+	python evals/preflight_models.py
 
 demo:
 	python -m legal_research.demo

@@ -146,16 +146,26 @@ def build_dialectic_chat(settings: Any) -> DialecticChat:
     from legal_research.llm.mock import MockLLM
     from legal_research.llm.openai_compat import OpenAICompatLLM
 
-    def make(model: str) -> _ClientAdapter:
+    def make(model: str, role: str = "") -> _ClientAdapter:
         if settings.llm_mode == "mock":
             return _ClientAdapter(model, MockLLM(model))
+        # A role may name its own endpoint and key; empty falls back to the
+        # shared pair, so a single-endpoint configuration behaves as before.
+        base_url = (
+            str(getattr(settings, f"dialectic_{role}_base_url", "") or "").strip()
+            or settings.dialectic_base_url
+        )
+        api_key = (
+            str(getattr(settings, f"dialectic_{role}_api_key", "") or "").strip()
+            or settings.llm_api_key
+        )
         return _ClientAdapter(
             model,
             OpenAICompatLLM(
                 name=model,
-                base_url=settings.dialectic_base_url,
+                base_url=base_url,
                 model=model,
-                api_key=settings.llm_api_key,
+                api_key=api_key,
                 timeout=max(5.0, float(settings.dialectic_timeout_seconds)),
             ),
         )
@@ -166,10 +176,10 @@ def build_dialectic_chat(settings: Any) -> DialecticChat:
         courtlistener = CourtListenerClient(token=token, budget=RateBudget())
 
     return DialecticChat(
-        thesis_client=make(settings.dialectic_thesis_model),
-        antithesis_client=make(settings.dialectic_antithesis_model),
-        synthesis_client=make(settings.dialectic_synthesis_model),
-        nli_client=make(settings.dialectic_nli_model),
+        thesis_client=make(settings.dialectic_thesis_model, "thesis"),
+        antithesis_client=make(settings.dialectic_antithesis_model, "antithesis"),
+        synthesis_client=make(settings.dialectic_synthesis_model, "synthesis"),
+        nli_client=make(settings.dialectic_nli_model, "nli"),
         courtlistener=courtlistener,
         retriever=_build_retriever(settings),
     )

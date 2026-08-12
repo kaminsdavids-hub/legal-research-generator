@@ -1472,3 +1472,79 @@ consistent, and the number to try to move is the generator's, not the gate's.
 hardware configuration. The false-positive readings are mine and not a lawyer's.
 None of this has been checked against a frontier model, which is the obvious
 control and the one I cannot run locally.
+
+---
+
+## 17. The frontier control: not run, and what was in the way
+
+§16 concluded that a 5–10% authority survival rate is a property of the
+generator, not of the gate, and named the obvious control: the same loop against
+a frontier model. It has **not been run**. No frontier credential is configured
+here — `LRG_LLM_API_KEY` is the 16-character Ollama placeholder and every base
+URL points at `127.0.0.1:11434` — and a key must not be pasted into a chat
+transcript, for the reason §9 already records about the CourtListener token.
+
+Attempting the setup surfaced two defects that would have blocked the run
+regardless of credentials. Both are fixed.
+
+### 17.1. No frontier model could satisfy the family guard
+
+`detect_family` recognised saul, nemotron, hermes, apertus, gemma, llama and gpt,
+and returned `"unknown"` for everything else. Two unknowns collide by design — a
+deliberate conservatism, since guessing that two unfamiliar names are different
+families would let correlated models debate each other. The consequence was that
+**every** hosted model mapped to `unknown`, so any lineup with two of them was
+rejected as same-family, and Claude versus Gemini was indistinguishable from
+Claude versus Claude.
+
+Added cases for claude, gemini, mistral, qwen, deepseek, grok, cohere and phi.
+The unknown-collides-with-unknown rule is unchanged and now documented as
+deliberate at the point where a future reader would be tempted to loosen it.
+
+### 17.2. One base URL for four roles
+
+Every role shared `dialectic_base_url`, so a role could not be pointed at a
+hosted API while the others stayed on Ollama — and with only one frontier
+provider available, a mixed lineup is the *only* way to satisfy distinctness.
+The comparison could not be configured at all.
+
+Per-role `dialectic_<role>_base_url` and `dialectic_<role>_api_key` now exist,
+empty meaning "use the shared pair", so existing single-endpoint configurations
+are untouched. A test asserts `build_dialectic_chat` actually reads them: the
+setting would be useless if the builder ignored it, which is the §11.6 shape.
+
+### 17.3. Preflight
+
+`evals/preflight_models.py` (`make preflight`) validates a lineup before it costs
+anything: distinct families, resolved endpoints, and one minimal completion per
+role. A collision fails before any model is called — a test asserts no probe runs
+once the lineup is invalid — and `--no-probe` checks configuration with no calls
+at all. It prints which *key source* each role resolved to and never a key.
+
+Verified against the current local lineup: four distinct families, four
+endpoints reachable, "lineup is ready".
+
+### To run the control
+
+Configure a key outside this transcript, then:
+
+```
+export LRG_DIALECTIC_THESIS_BASE_URL=https://api.anthropic.com/v1
+export LRG_DIALECTIC_THESIS_MODEL=claude-opus-4
+export LRG_DIALECTIC_THESIS_API_KEY=...      # in a shell, not in chat
+make preflight
+python evals/run_loop_eval.py --live --only S2-expressive-conduct --out frontier.json
+python evals/compare_support_scorers.py frontier.json
+```
+
+Thesis is the role worth upgrading first: it proposes the propositions that
+retrieval then attaches citations to, so it is the arm of §16's conclusion under
+test. Antithesis, synthesis and NLI stay local, which also keeps the comparison
+honest — only one variable moves. Expect roughly 16 paid calls for four answers,
+before retries.
+
+The prediction §16 implies, recorded now so it cannot be adjusted afterwards: if
+the generator is the bottleneck, thesis-side authority survival should rise
+materially above 1-in-10. If it does not, the remaining suspect is the retrieval
+stage, which chooses *which* corpus record to attach and which no experiment in
+§14–§17 has varied.

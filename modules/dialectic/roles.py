@@ -37,6 +37,29 @@ def detect_family(model: str) -> str:
         return "gemma"
     if "llama" in m:
         return "llama"
-    if "gpt" in m:
+    if "gpt" in m or "o1" in m.split() or "o3" in m.split():
         return "gpt"
+    # Frontier families. Without these every hosted model mapped to "unknown",
+    # and because two unknowns are treated as colliding, no frontier
+    # configuration could satisfy the distinctness guard at all.
+    if "claude" in m or "anthropic" in m:
+        return "claude"
+    if "gemini" in m or "palm" in m:
+        return "gemini"
+    if "mistral" in m or "mixtral" in m or "magistral" in m:
+        return "mistral"
+    if "qwen" in m:
+        return "qwen"
+    if "deepseek" in m:
+        return "deepseek"
+    if "grok" in m:
+        return "grok"
+    if "command" in m or "cohere" in m:
+        return "cohere"
+    if "phi" in m:
+        return "phi"
+    # Deliberately conservative: an unrecognised model is "unknown", and two
+    # unknowns collide. Guessing that two unfamiliar names are different
+    # families would let correlated models debate each other, which is the one
+    # thing this function exists to prevent. Add a case rather than loosening it.
     return "unknown"
