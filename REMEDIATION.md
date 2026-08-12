@@ -1548,3 +1548,57 @@ the generator is the bottleneck, thesis-side authority survival should rise
 materially above 1-in-10. If it does not, the remaining suspect is the retrieval
 stage, which chooses *which* corpus record to attach and which no experiment in
 §14–§17 has varied.
+
+---
+
+## 18. Varying retrieval: there is headroom, and the obvious fix is Goodhart
+
+§17 left retrieval as the last unvaried suspect. Rather than compare retrieval
+modes — a narrower question, and one live run per mode — this measures the
+**ceiling**: for every authority claim, score it against *every* record in the
+corpus and ask whether any record at all would clear the threshold. That is what
+a perfect retriever could achieve. No models are called.
+
+Measured over the 10 authorities from the end-to-end full-text run:
+
+| scorer | retrieval's pick | ceiling | recoverable | chose the best record |
+|---|---|---|---|---|
+| lexical | 1/10 | 8/10 | 7 | 2/10 |
+| embedding | 1/10 | 4/10 | 3 | 1/10 |
+
+**A methodological bug, found and fixed before reading anything into this.** The
+first version compared the *live run's* grounding verdict — taken with the
+lexical scorer — against a ceiling computed with embedding, so a scorer
+disagreement would have been reported as a retrieval failure. `actual` now scores
+the record retrieval chose with the same scorer as the ceiling. The corrected
+numbers are unchanged, which is worth knowing but was not knowable in advance.
+
+**The finding.** Retrieval selects the best-available record 1–2 times in 10, and
+under embedding leaves roughly 3 of 10 groundable claims on the table. §16
+concluded the generator was the bottleneck; that is now too strong. Retrieval is
+a real and separate contributor.
+
+**Two limits on how far to read it.** The lexical ceiling of 8/10 is inflated by
+the length confound of §16 — scoring one claim against 40 records of long
+passages will find *something* over 0.34 nearly always — so the embedding ceiling
+of 4/10 is the trustworthy figure. And the ceiling is an upper bound on
+*threshold-passing*, not on genuine support: spot-checking it turns up
+`15 C.F.R. 734.7` offered for "no requirement that protected information be
+readable", which is the same false-positive pattern as §14.
+
+**Why the obvious fix is wrong.** The natural response is a support-aware
+retriever that ranks records by the scorer the grounding gate uses. That would
+reach the ceiling by construction — and it would make the gate decorative.
+Retrieval would then propose only what the gate is guaranteed to accept, so the
+gate would report a pass forever while checking nothing. This is exactly the
+self-satisfying arrangement that cost this repository three gates (§5, §11.5,
+§11.11a), arrived at from a new direction, and it is the more interesting result
+than the headroom itself.
+
+**What legitimately closes the gap.** Retrieval must improve on a signal
+*independent* of the gate's: a better index, better query construction, or
+reranking on features the support check does not use. The gate then remains an
+independent check on retrieval's output rather than a mirror of its objective.
+Any change here should be measured against the ceiling *and* audited for whether
+it has quietly aligned the two — the ceiling tooling makes the first easy and the
+second is a judgement no metric will make.

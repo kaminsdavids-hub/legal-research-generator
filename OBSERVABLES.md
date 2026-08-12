@@ -1132,3 +1132,17 @@ small gap: the dialectic engine already builds an NLI client, and `Gates.live`
 could pass it to `NoveltyGate` and `CoherenceGate`. Recording it rather than
 fixing it blind, because the change alters what merges and would need
 re-measuring against these numbers to mean anything.
+
+### D30. Retrieval leaves headroom, and closing it naively makes the gate decorative
+
+Measured, not designed (REMEDIATION §18). Retrieval selects the best-available
+corpus record 1–2 times in 10, and under the embedding scorer roughly 3 of 10
+groundable claims are lost to that choice. So D25's "the generator is the
+bottleneck" is too strong: retrieval is a separate contributor.
+
+The fix that suggests itself — rank records by the scorer the grounding gate uses
+— reaches the ceiling by construction and destroys the gate. Retrieval would
+propose only what the gate must accept, and the gate would report a pass forever
+while checking nothing. Any retrieval work here has to improve on a signal the
+support check does not use, and has to be audited for that alignment; the ceiling
+tooling measures the gain but cannot detect the collapse.
