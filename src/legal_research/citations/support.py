@@ -5,13 +5,13 @@ misattributed is exactly the failure mode we exist to catch. Three scorers sit
 behind one :class:`SupportScorer` protocol:
 
 * :class:`LexicalSupportScorer` — content-token recall. Zero deps, deterministic;
-  the default and what CI uses. A blunt instrument: it can be fooled by shared
-  vocabulary in either direction.
+  used by CI and as a graceful fallback when semantic deps are unavailable.
+  A blunt instrument: it can be fooled by shared vocabulary in either direction.
 * :class:`EmbeddingSupportScorer` — cosine similarity of sentence embeddings.
   Captures paraphrase, but similarity is not entailment.
 * :class:`NliSupportScorer` — a cross-encoder NLI model scoring P(passage ⊨
-  proposition). This is true semantic entailment and the recommended setting on
-  the Spark.
+  proposition). This is true semantic entailment and the default setting in the
+  live Spark profile.
 
 The two semantic scorers require the optional ``gpu`` extra; if the deps are
 missing, :func:`build_support_scorer` falls back to lexical, mirroring the
@@ -20,14 +20,90 @@ retriever's graceful degradation so the pipeline always runs.
 
 from __future__ import annotations
 
+import logging
+import re
+from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from ..config import Settings, get_settings
 from .retriever import _tokens
 
+logger = logging.getLogger(__name__)
+
 LEXICAL_THRESHOLD = 0.34
 SEMANTIC_THRESHOLD = 0.55
 DEFAULT_NLI_MODEL = "cross-encoder/nli-deberta-v3-base"
+
+#: Clause boundaries used to decompose a proposition into separately citable parts.
+CLAUSE_SPLIT_RE = re.compile(
+    r";|,\s+(?:which|where|while|although|whereas)\s+|\s+(?:and|but|yet|whereas)\s+"
+)
+
+#: A clause with fewer content tokens than this asserts too little to test.
+MIN_CLAUSE_TOKENS = 4
+
+#: Cap on candidates scored per citation. Semantic scorers are the slow path, so
+#: the proposition plus its three longest clauses is a deliberate bound on cost.
+MAX_SUPPORT_CANDIDATES = 4
+
+
+def candidate_propositions(proposition: str) -> list[str]:
+    """Decompose a proposition into the parts a single citation might support.
+
+    Legal writing routinely joins a supported holding to a second claim that lives
+    in a *different* authority::
+
+        Private plaintiffs may not maintain aiding-and-abetting suits under
+        Section 10(b), and primary liability requires a showing of scienter.
+
+    The first clause is near-verbatim in *Central Bank*; the second belongs to
+    *Hochfelder*. Entailment against the conjunction therefore scores ~0.00 even
+    though the citation is perfectly correct for the clause it follows. Scoring the
+    clauses separately is how citation actually works: a cite supports the
+    proposition it is attached to, not every claim in the sentence.
+
+    The trade-off is deliberate: a conjunction is accepted when *any* clause is
+    supported. Per-clause citation is the writer's job; the verifier's job is to
+    reject authority that supports *nothing* in the sentence.
+    """
+
+    whole = " ".join(proposition.split())
+    candidates = [whole]
+    clauses = [
+        " ".join(clause.split())
+        for clause in CLAUSE_SPLIT_RE.split(whole)
+        if len(_tokens(clause)) >= MIN_CLAUSE_TOKENS
+    ]
+    for clause in sorted(clauses, key=len, reverse=True):
+        if clause not in candidates:
+            candidates.append(clause)
+    return candidates[:MAX_SUPPORT_CANDIDATES]
+
+
+def best_support(
+    scorer: SupportScorer,
+    proposition: str,
+    passages: Sequence[str],
+    *,
+    threshold: float | None = None,
+) -> tuple[float, str]:
+    """Best support score across ``passages`` and the proposition's clauses.
+
+    Returns ``(score, passage)``. Scoring stops as soon as ``threshold`` is met,
+    since further work cannot change the verdict.
+    """
+
+    cutoff = scorer.threshold if threshold is None else threshold
+    best = 0.0
+    best_passage = ""
+    for candidate in candidate_propositions(proposition):
+        for passage in passages:
+            score = scorer.score(candidate, passage)
+            if score > best:
+                best, best_passage = score, passage
+            if best >= cutoff:
+                return best, best_passage
+    return best, best_passage
 
 
 def lexical_support(proposition: str, passage: str) -> float:
@@ -66,13 +142,31 @@ class EmbeddingSupportScorer:  # pragma: no cover - requires the gpu extra / Spa
         from sentence_transformers import SentenceTransformer
 
         self.threshold = threshold
+        self._nemotron_prompt_mode = "nemotron-3-embed" in model.lower()
         self._model = SentenceTransformer(model)
+
+    def _encode_passage(self, passage: str):
+        encode_document = getattr(self._model, "encode_document", None)
+        if callable(encode_document):
+            return encode_document([passage], normalize_embeddings=True)
+        if self._nemotron_prompt_mode:
+            passage = f"document: {passage}"
+        return self._model.encode([passage], normalize_embeddings=True)
+
+    def _encode_proposition(self, proposition: str):
+        encode_query = getattr(self._model, "encode_query", None)
+        if callable(encode_query):
+            return encode_query([proposition], normalize_embeddings=True)
+        if self._nemotron_prompt_mode:
+            proposition = f"query: {proposition}"
+        return self._model.encode([proposition], normalize_embeddings=True)
 
     def score(self, proposition: str, passage: str) -> float:
         import numpy as np
 
-        emb = self._model.encode([passage, proposition], normalize_embeddings=True)
-        arr = np.asarray(emb, dtype="float32")
+        p_emb = self._encode_passage(passage)
+        q_emb = self._encode_proposition(proposition)
+        arr = np.asarray([p_emb[0], q_emb[0]], dtype="float32")
         cos = float(arr[0] @ arr[1])
         return max(0.0, min(1.0, cos))
 
@@ -102,20 +196,46 @@ class NliSupportScorer:  # pragma: no cover - requires the gpu extra / Spark
 
 
 def build_support_scorer(settings: Settings | None = None) -> SupportScorer:
-    """Select a scorer from settings, falling back to lexical if deps are absent."""
+    """Select a scorer from settings, falling back to lexical if deps are absent.
+
+    **A fallback is logged at WARNING, never silent.** This function returned a
+    lexical scorer while the configuration said ``nli``: the API process had been
+    started at a moment when the cross-encoder could not be constructed, kept the
+    fallback for its whole lifetime, and nothing anywhere said so. A full
+    pipeline run then removed 61 of 61 citations against a 0.34 threshold nobody
+    had configured, and reported the paper shippable. The same silent-degradation
+    shape has now cost this repository three separate investigations
+    (REMEDIATION §11.6, §14, §21).
+
+    Falling back is right -- a missing extra should degrade rather than crash.
+    Doing it quietly is what is wrong.
+    """
 
     s = settings or get_settings()
     mode = (s.support_scorer or "lexical").lower()
     override = s.support_threshold
 
+    def _fallback(reason: BaseException) -> SupportScorer:
+        logger.warning(
+            "support scorer %r was requested but could not be built (%s: %s); "
+            "falling back to lexical at threshold %s. Support is now token "
+            "recall, not entailment, and scores are not comparable to a "
+            "semantic run.",
+            mode,
+            type(reason).__name__,
+            str(reason)[:200],
+            override or LEXICAL_THRESHOLD,
+        )
+        return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
+
     if mode == "embedding":
         try:
             return EmbeddingSupportScorer(s.embed_model, override or SEMANTIC_THRESHOLD)
-        except Exception:  # noqa: BLE001 - fall back to lexical if the extra is missing
-            return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
+        except Exception as exc:  # noqa: BLE001 - degrade rather than crash, but say so
+            return _fallback(exc)
     if mode == "nli":
         try:
             return NliSupportScorer(s.nli_model, override or SEMANTIC_THRESHOLD)
-        except Exception:  # noqa: BLE001 - fall back to lexical if the extra is missing
-            return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
+        except Exception as exc:  # noqa: BLE001 - degrade rather than crash, but say so
+            return _fallback(exc)
     return LexicalSupportScorer(override or LEXICAL_THRESHOLD)

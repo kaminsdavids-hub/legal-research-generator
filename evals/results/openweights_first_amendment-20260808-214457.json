@@ -1,0 +1,117 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 4.733,
+  "cluster_means": {
+    "A": 4.733
+  },
+  "gate_failures": [
+    "A1"
+  ],
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['591 U.S. 430 (not_found)', '564 U.S. 552 (not_found)', '564 U.S. 552 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        5,
+        7,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "..."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response thoroughly engages with the doctrinal anchors provided, presenting well-reasoned arguments on both sides of the issue. The crux identification is strong and the synthesis discipline effectively navigates the split authority, arriving at a likely outcome that balances First Amendment concerns with governmental interests in regulating AI."
+    },
+    {
+      "id": "A3",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "2 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "..."
+    }
+  ]
+}

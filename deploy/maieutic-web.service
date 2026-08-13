@@ -1,0 +1,22 @@
+[Unit]
+Description=maieutic loop (Socratic-dialectic manuscript engine)
+Documentation=https://github.com/kaminsdavids-hub/legal-research-generator
+# Ollama is a system service and a user unit cannot order against it reliably,
+# so a start before Ollama is up is handled by Restart= rather than by ordering.
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/legal-research-generator
+Environment=MAIEUTIC_LIVE=1
+Environment=LRG_CORPUS_PATH=data/corpus/openweights.jsonl
+Environment=OLLAMA_KEEP_ALIVE=45m
+ExecStart=%h/legal-research-generator/.venv/bin/python -m uvicorn \
+  --factory modules.maieutic.web:_app --host 127.0.0.1 --port 8015
+# Startup loads the support scorer weights and took ~35s when measured.
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

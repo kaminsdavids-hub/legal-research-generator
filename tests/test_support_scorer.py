@@ -1,7 +1,7 @@
 """Pluggable support scoring for the adversarial Verifier (spec §4).
 
-The default lexical scorer must be unchanged (deterministic CI), and the Verifier
-must honor whatever scorer is injected — this is the seam the semantic NLI /
+The lexical scorer must remain stable (deterministic CI), and the Verifier must
+honor whatever scorer is injected — this is the seam the semantic NLI /
 embedding scorers plug into on the Spark.
 """
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch local, OpenAI-compatible model servers for the four experts on a DGX Spark
+# Launch local, OpenAI-compatible model servers for the expert pool on a DGX Spark
 # using vLLM. Each expert gets its own port; the backend is pointed at them via the
 # LRG_*_BASE_URL / LRG_*_MODEL environment variables (see .env.example).
 #
@@ -9,14 +9,16 @@ set -euo pipefail
 
 # Expert -> (port, model). Override any of these via the environment.
 SAUL_MODEL="${LRG_SAUL_MODEL:-Equall/Saul-7B-Instruct-v1}"
-FINANCE_MODEL="${LRG_FINANCE_MODEL:-AdaptLLM/finance-chat}"
-WRITER_MODEL="${LRG_WRITER_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
-ROUTER_MODEL="${LRG_ROUTER_MODEL:-google/gemma-3-1b-it}"
+WRITER_MODEL="${LRG_WRITER_MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
+GEMMA_MODEL="${LRG_GEMMA_MODEL:-google/gemma-3-4b-it}"
+HERMES_MODEL="${LRG_HERMES_MODEL:-nvidia/Nemotron-3-Nano-4B-v1}"
+HERMES3_MODEL="${LRG_HERMES3_MODEL:-NousResearch/Hermes-3-Llama-3.1-8B}"
 
 SAUL_PORT="${SAUL_PORT:-8101}"
-FINANCE_PORT="${FINANCE_PORT:-8102}"
 WRITER_PORT="${WRITER_PORT:-8103}"
-ROUTER_PORT="${ROUTER_PORT:-8104}"
+GEMMA_PORT="${GEMMA_PORT:-8105}"
+HERMES_PORT="${HERMES_PORT:-8106}"
+HERMES3_PORT="${HERMES3_PORT:-8107}"
 
 if ! command -v vllm >/dev/null 2>&1; then
   echo "!! vllm not found. Install with: pip install vllm" >&2
@@ -35,20 +37,22 @@ serve() {
 }
 
 mkdir -p logs
-serve saul    "$SAUL_MODEL"    "$SAUL_PORT"    "${SAUL_FRAC:-0.30}"
-serve finance "$FINANCE_MODEL" "$FINANCE_PORT" "${FINANCE_FRAC:-0.20}"
-serve writer  "$WRITER_MODEL"  "$WRITER_PORT"  "${WRITER_FRAC:-0.40}"
-serve router  "$ROUTER_MODEL"  "$ROUTER_PORT"  "${ROUTER_FRAC:-0.10}"
+serve saul   "$SAUL_MODEL"   "$SAUL_PORT"   "${SAUL_FRAC:-0.20}"
+serve writer "$WRITER_MODEL" "$WRITER_PORT" "${WRITER_FRAC:-0.22}"
+serve gemma  "$GEMMA_MODEL"  "$GEMMA_PORT"  "${GEMMA_FRAC:-0.14}"
+serve hermes "$HERMES_MODEL" "$HERMES_PORT" "${HERMES_FRAC:-0.17}"
+serve hermes3 "$HERMES3_MODEL" "$HERMES3_PORT" "${HERMES3_FRAC:-0.20}"
 
 cat <<EOF
 
-All four expert servers launching. Point the backend at them, e.g.:
+All expert servers launching. Point the backend at them, e.g.:
 
   export LRG_LLM_MODE=openai
   export LRG_SAUL_BASE_URL=http://127.0.0.1:${SAUL_PORT}/v1
-  export LRG_FINANCE_BASE_URL=http://127.0.0.1:${FINANCE_PORT}/v1
   export LRG_WRITER_BASE_URL=http://127.0.0.1:${WRITER_PORT}/v1
-  export LRG_ROUTER_BASE_URL=http://127.0.0.1:${ROUTER_PORT}/v1
+  export LRG_GEMMA_BASE_URL=http://127.0.0.1:${GEMMA_PORT}/v1
+  export LRG_HERMES_BASE_URL=http://127.0.0.1:${HERMES_PORT}/v1
+  export LRG_HERMES3_BASE_URL=http://127.0.0.1:${HERMES3_PORT}/v1
 
 Tail logs in ./logs/. Stop with: pkill -f 'vllm serve'
 EOF

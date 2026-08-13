@@ -1,0 +1,287 @@
+"""``maieutic`` — drive the loop from a terminal.
+
+Thin by design: argv in, text out. Everything that decides anything lives in
+:mod:`modules.maieutic.loop`, so the behaviour can be tested without going
+through stdout.
+
+:func:`build_parser` is separate from :func:`main` because a CLI whose parser is
+built inline is a CLI no test can reach. That is not hypothetical here — an
+earlier tool in this repository was broken for every invocation and pushed, while
+98 tests passed, because the suite never invoked it (REMEDIATION §11.11c).
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Any
+
+from .learn import Journal
+from .loop import GateReport, Gates, Session, StepResult, TurnProvider
+from .render import Audience
+from .socratic import SocraticEngine
+
+DEFAULT_STATE = Path(".maieutic/session.json")
+#: Separate from the session on purpose: evidence about which questions are worth
+#: asking accumulates across manuscripts, and one manuscript never supplies enough.
+DEFAULT_JOURNAL = Path(".maieutic/journal.json")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="maieutic",
+        description="Socratic questions in, an argued manuscript out.",
+    )
+    parser.add_argument(
+        "--state",
+        type=Path,
+        default=DEFAULT_STATE,
+        help=f"session file (default: {DEFAULT_STATE})",
+    )
+    parser.add_argument(
+        "--journal",
+        type=Path,
+        default=DEFAULT_JOURNAL,
+        help=f"question-history file, shared across manuscripts (default: {DEFAULT_JOURNAL})",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    begin = sub.add_parser("begin", help="open a manuscript with your thesis")
+    begin.add_argument("thesis")
+    begin.add_argument("--section", default="")
+
+    sub.add_parser("ask", help="show the next question")
+
+    live = argparse.ArgumentParser(add_help=False)
+    live.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "run the dialectic engine over your answer, so the machine argues "
+            "both sides of it. Needs the configured local models; without this "
+            "a merge carries only your own words."
+        ),
+    )
+
+    answer = sub.add_parser("answer", help="answer the pending question", parents=[live])
+    answer.add_argument("text")
+
+    cycle = sub.add_parser("cycle", help="ask and answer until you stop", parents=[live])
+    cycle.add_argument(
+        "--rounds", type=int, default=0, help="stop after N rounds (0 = until done)"
+    )
+
+    sub.add_parser("skip", help="pass on the pending question")
+
+    sub.add_parser("status", help="gaps, open problems and what is outstanding")
+
+    sub.add_parser(
+        "policy", help="what the loop has learned about which questions you answer"
+    )
+
+    show = sub.add_parser("render", help="print the manuscript")
+    show.add_argument(
+        "--review",
+        action="store_true",
+        help="annotate provenance: what you wrote versus what you accepted",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    session = Session.load(args.state)
+    session.journal = Journal.load(args.journal)
+    engine = SocraticEngine()
+    # The gates must match the exchange: a live run produces authorities, and
+    # offline gates have no verifier to confirm them. See REMEDIATION 12.2.
+    gates = Gates.live(_settings()) if getattr(args, "live", False) else Gates.offline()
+
+    if args.command == "begin":
+        if session.graph.nodes:
+            print("This manuscript has already been started.", file=sys.stderr)
+            return 1
+        node = session.begin(args.thesis, args.section)
+        print(f"Opened with your thesis ({node.id}).")
+        _ask(session, engine)
+
+    elif args.command == "ask":
+        if not _ask(session, engine):
+            return 0
+
+    elif args.command == "answer":
+        if session.pending is None and _ask(session, engine) is None:
+            return 0
+        _report(session.answer(args.text, gates, _turns(args)))
+
+    elif args.command == "cycle":
+        return _cycle(session, engine, gates, args)
+
+    elif args.command == "skip":
+        question = session.decline()
+        if question is None:
+            print("No question is pending.")
+        else:
+            print("Skipped. It stays an open gap; you will not be asked again.")
+            _ask(session, engine)
+
+    elif args.command == "policy":
+        _policy(session)
+
+    elif args.command == "status":
+        _status(session)
+
+    elif args.command == "render":
+        print(
+            session.manuscript(
+                Audience.REVIEW if args.review else Audience.MANUSCRIPT
+            ).text,
+            end="",
+        )
+
+    session.save(args.state)
+    session.journal.save(args.journal)
+    return 0
+
+
+def _settings() -> Any:
+    from legal_research.config import get_settings
+
+    return get_settings()
+
+
+def _turns(args: argparse.Namespace) -> TurnProvider | None:
+    """Build the live turn provider, once, when --live is given.
+
+    A failure to *construct* it is fatal: the author asked for the exchange and
+    is entitled to know it will not happen before they start answering, rather
+    than discovering it one refusal at a time.
+    """
+    if not getattr(args, "live", False):
+        return None
+    from .service import build_turn_provider
+
+    provider: TurnProvider = build_turn_provider(_settings())
+    return provider
+
+
+def _cycle(
+    session: Session,
+    engine: SocraticEngine,
+    gates: Gates,
+    args: argparse.Namespace,
+) -> int:
+    """Ask, read an answer, gate, merge. Repeat until the author stops."""
+    turns = _turns(args)
+    rounds = 0
+    while args.rounds == 0 or rounds < args.rounds:
+        question = _ask(session, engine)
+        if question is None:
+            break
+
+        print("\nYour answer (blank line to stop):")
+        try:
+            text = input("> ")
+        except EOFError:
+            break
+        if not text.strip():
+            # Leaving is not the same as passing, so the blank line ends the
+            # session without recording an opinion about the question. `skip`
+            # is how the author says this one was not worth answering.
+            break
+
+        _report(session.answer(text, gates, turns))
+        session.journal.save(args.journal)
+        # Saved every round. A crash mid-session must not cost the author the
+        # answers they already gave.
+        session.save(args.state)
+        rounds += 1
+
+    session.save(args.state)
+    return 0
+
+
+def _ask(session: Session, engine: SocraticEngine) -> object | None:
+    question = session.pending or session.ask(engine)
+    if question is None:
+        print("No unasked gaps remain.")
+        outstanding = session.outstanding()
+        if outstanding:
+            print(
+                f"{len(outstanding)} gap(s) were asked about and are still open; "
+                "see `maieutic status`."
+            )
+        return None
+    print(f"\n{question.text}")
+    return question
+
+
+def _report(result: StepResult) -> None:
+    if result.merged:
+        print(f"\nMerged: {len(result.added)} node(s) added.")
+    else:
+        print("\nNot merged. The question stays open.")
+    for reason in result.refusals:
+        print(f"  refused — {reason}")
+    if result.report:
+        _advise(result.report)
+    if result.turn_error:
+        print(
+            f"  the dialectic exchange failed ({result.turn_error}); your answer "
+            "was kept, the machine's objections were not produced"
+        )
+    for node_id in result.dropped:
+        print(
+            f"  dropped — the machine's node {node_id} could not be grounded; "
+            "your answer merged without it"
+        )
+    if result.unresolved:
+        print(
+            "  note — this gap needs an edit rather than an addition, so your "
+            "answer did not close it."
+        )
+    if result.adaptation and result.adaptation.refused:
+        for refusal in result.adaptation.refused:
+            print(f"  dropped at the boundary — {refusal}")
+
+
+def _advise(report: GateReport) -> None:
+    for advisory in report.advisories:
+        print(f"  advisory — {advisory}")
+
+
+def _policy(session: Session) -> None:
+    from .learn import LearnedPolicy
+
+    rows = session.journal.summary()
+    if not rows:
+        print("Nothing asked yet, so nothing learned.")
+        return
+    print("What you did with the questions so far:\n")
+    for line in LearnedPolicy(session.journal).explain():
+        print(f"  {line}")
+    print(
+        "\nEngagement is measured from whether you answered, never from whether "
+        "the gates accepted it: an answer they refused is still a question worth "
+        "having asked."
+    )
+
+
+def _status(session: Session) -> None:
+    gaps = session.gaps()
+    outstanding = {g.key for g in session.outstanding()}
+    print(f"{len(session.graph.nodes)} node(s), {len(gaps)} open gap(s).")
+    for gap in gaps:
+        mark = " (already asked)" if gap.key in outstanding else ""
+        print(f"  {gap.kind.value}: {gap.detail}{mark}")
+
+    manuscript = session.manuscript()
+    for problem in manuscript.open_problems:
+        print(f"  unanswered objection: {problem}")
+    for warning in manuscript.warnings:
+        print(f"  warning: {warning}")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

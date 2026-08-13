@@ -37,3 +37,16 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Local Netlify folder
+.netlify
+
+# Env backups: these hold real secrets and must never be committed.
+.env.backup-*
+.env.*.bak
+
+# Eval caches and results are local artefacts, not source.
+evals/.cache/
+
+# Scheduled-run logs are local artefacts.
+logs/

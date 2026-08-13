@@ -1,0 +1,80 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 8.5,
+  "cluster_means": {
+    "A": 8.5
+  },
+  "gate_failures": [],
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "1 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        9,
+        8,
+        9,
+        9,
+        9
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 8.8,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively argues both sides of the issue by engaging with key doctrinal anchors and providing a clear synthesis of the decisive crux. The thesis and antithesis are well-supported by relevant authority, and the system's analysis correctly identifies the rescinded regulation as not currently operative law. The response anticipates counterarguments and provides a strong rationale for the likely outcome. Overall, the response demonstrates a high level of competence in legal dialectic."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        8,
+        9,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 8.2,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively anticipates and addresses counterarguments, identifies the crux of the issue, and demonstrates synthesis discipline by presenting a well-reasoned argument that follows from the weighing of authorities. The response scores high on steelmanning because it presents a strong thesis while acknowledging the antithesis's arguments and addressing them in detail."
+    }
+  ]
+}

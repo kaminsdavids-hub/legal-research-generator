@@ -1,0 +1,49 @@
+{
+  "note": [
+    "Scripted author sessions for the maieutic loop harness.",
+    "The answers are STAND-INS, not a real author's. They were written outside",
+    "the loop so the machinery faces text it did not produce, which is what",
+    "keeps the measurement from being circular -- but a stand-in is not an",
+    "author, and nothing here shows the loop helps someone actually writing.",
+    "See OBSERVABLES D22. Replace `source` with `transcript` and drop in real",
+    "answers to get a measurement that means more."
+  ],
+  "sessions": [
+    {
+      "id": "S1-export-control",
+      "source": "fixture",
+      "section": "Export control",
+      "thesis": "Publishing open model weights is not a deemed export under the EAR.",
+      "answers": [
+        "Someone would say weights are functional artifacts rather than published information, so the exclusion never engages at all.",
+        "Functionality has never defeated the published-information exclusion for other technical material distributed openly.",
+        "The regulation was drafted against a background assumption of controlled physical transfer, not open internet distribution.",
+        "No enforcement action has ever treated an unrestricted public posting as a deemed export to every foreign national who reads it.",
+        "The agency's own guidance disclaims authority over fundamental research once it has been published."
+      ]
+    },
+    {
+      "id": "S2-expressive-conduct",
+      "source": "fixture",
+      "section": "First Amendment",
+      "thesis": "Model weights are expressive material for First Amendment purposes.",
+      "answers": [
+        "The obvious objection is that weights are unreadable numbers, and nobody experiences them as expression the way they experience prose.",
+        "Legibility to a human reader has never been the test; encrypted and compiled material has been protected without being readable.",
+        "Weights encode the choices of the people who assembled and curated the training corpus, and choosing among possible expressions is itself expressive.",
+        "Treating unreadability as decisive would remove protection from every work that requires a machine to interpret it."
+      ]
+    },
+    {
+      "id": "S3-thin",
+      "source": "fixture",
+      "note": "Deliberately weak. The first answer is genuinely vacuous and is refused. The second is a truism that PASSES -- confirming OBSERVABLES D15: the banality gate catches an absence of content, not a confident platitude.",
+      "thesis": "The regulatory treatment of open weights is unsettled.",
+      "answers": [
+        "It may perhaps arguably possibly seem so.",
+        "Context matters a great deal and there are arguments on both sides.",
+        "The regulatory treatment of open weights is unsettled at present."
+      ]
+    }
+  ]
+}

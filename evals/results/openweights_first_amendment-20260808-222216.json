@@ -1,0 +1,115 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 6.733,
+  "cluster_means": {
+    "A": 6.733
+  },
+  "gate_failures": [],
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        6,
+        5,
+        8,
+        4
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages the key doctrinal anchors and argues both sides of the issue. It identifies a potential crux question but does not fully resolve it with synthesis discipline. The authority hierarchy is somewhat murky as California privacy law vs federal trade secrets law are pitted against First Amendment precedents."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response thoroughly engages with the doctrinal anchors provided, presenting well-reasoned arguments on both sides of the issue. The crux identification is strong and the synthesis discipline effectively navigates the split authority, arriving at a likely outcome that balances First Amendment concerns with governmental interests in regulating AI."
+    },
+    {
+      "id": "A3",
+      "cluster": "A",
+      "holdout": false,
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "2 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "..."
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-.PHONY: help install install-dev backend frontend-install frontend test lint typecheck demo clean
+.PHONY: help install install-dev backend frontend-install frontend test lint typecheck validate test-dialectic demo clean
 
 help:
 	@echo "legal research generator — make targets"
@@ -10,6 +10,9 @@ help:
 	@echo "  test            Run the pytest suite (mock backend, no GPU/network)"
 	@echo "  lint            Ruff lint"
 	@echo "  typecheck       mypy strict typecheck"
+	@echo "  validate        Lint, typecheck dialectic module, and run dialectic tests"
+	@echo "  typecheck-dialectic  mypy strict typecheck of modules/dialectic"
+	@echo "  test-dialectic  Run dialectic module tests only"
 	@echo "  demo            Run the end-to-end CLI demo (raw idea -> verified paper + PDF)"
 
 install:
@@ -31,10 +34,42 @@ test:
 	python -m pytest
 
 lint:
-	python -m ruff check src tests
+	python -m ruff check src tests modules evals probe.py
 
 typecheck:
-	python -m mypy
+	python -m mypy src modules/dialectic
+
+validate: lint typecheck-dialectic test-dialectic test-eval-harness
+
+typecheck-dialectic:
+	python -m mypy modules/dialectic modules/maieutic evals
+
+test-dialectic:
+	python -m pytest tests/test_dialectic.py tests/test_maieutic_graph.py \
+		tests/test_maieutic_novelty.py tests/test_maieutic_grounding.py \
+		tests/test_maieutic_service.py tests/test_maieutic_socratic.py \
+		tests/test_maieutic_adapter.py tests/test_maieutic_coherence.py \
+		tests/test_maieutic_banality.py tests/test_maieutic_render.py \
+		tests/test_maieutic_loop.py tests/test_maieutic_learn.py tests/test_maieutic_web.py -v
+
+test-eval-harness:
+	python -m pytest tests/test_eval_harness.py tests/test_loop_harness.py \
+		tests/test_compare_scorers.py tests/test_fetch_opinion_text.py \
+		tests/test_preflight_models.py \
+		tests/test_retrieval_ceiling.py \
+		tests/test_rerank_experiment.py -q
+
+eval:
+	python evals/run_eval.py
+
+loop-eval:
+	python evals/run_loop_eval.py
+
+preflight:
+	python evals/preflight_models.py
+
+maieutic-web:
+	python -m uvicorn --factory 'modules.maieutic.web:_app' --port 8015
 
 demo:
 	python -m legal_research.demo

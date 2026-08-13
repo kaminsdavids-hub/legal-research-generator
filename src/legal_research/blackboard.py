@@ -46,6 +46,11 @@ class Blackboard(BaseModel):
     toa: dict[str, list[str]] = Field(default_factory=dict)
     edits: list[EditRecord] = Field(default_factory=list)
     novelty: NoveltyAssessment | None = None
+    # Set when the last interview turn ran in degraded mode (interviewer model
+    # unreachable or empty), cleared on the next healthy turn. Without this the
+    # brainstorm endpoint returns only the Blackboard, so a dead model is
+    # indistinguishable in the UI from an interviewer that repeats itself.
+    brainstorm_degraded: str = ""
 
     _idea_seq: int = PrivateAttr(default=0)
     _section_seq: int = PrivateAttr(default=0)
@@ -54,9 +59,17 @@ class Blackboard(BaseModel):
 
     # ---- ideas ---------------------------------------------------------------------
 
-    def add_idea(self, text: str, angle: str = "", novelty_note: str = "") -> Idea:
+    def add_idea(
+        self, text: str, angle: str = "", novelty_note: str = "", claim: str = ""
+    ) -> Idea:
         self._idea_seq += 1
-        idea = Idea(id=f"idea-{self._idea_seq:03d}", text=text, angle=angle, novelty_note=novelty_note)
+        idea = Idea(
+            id=f"idea-{self._idea_seq:03d}",
+            text=text,
+            claim=claim,
+            angle=angle,
+            novelty_note=novelty_note,
+        )
         self.ideas.append(idea)
         return idea
 
@@ -145,15 +158,33 @@ class Blackboard(BaseModel):
                 section.status = SectionStatus.CITED
 
     def is_shippable(self) -> bool:
-        """A paper may ship only when no citation remains unverified.
+        """A paper may ship only when no citation remains unverified, and only
+        when it still has authority to stand on.
 
         A REMOVED cite has already been stripped from the manuscript, so it does not
         block shipping; only PENDING / NEEDS_REVIEW cites do.
+
+        That rule alone is satisfied vacuously by removing everything, which is
+        not a hypothetical. A full pipeline run proposed 61 citations, removed
+        all 61, and reported ``shippable=True`` over a 9,653-word draft with an
+        empty table of authorities. A legal paper with no surviving authority is
+        not shippable by any standard the rest of this system applies -- and
+        `tests/test_pipeline.py` already asserted "at least one verified
+        citation" separately, because this function did not.
+
+        So: a paper that proposed citations must retain at least one verified
+        one. A paper that has not reached the citation stage at all is left
+        alone, since it has not failed anything yet.
         """
 
         self.refresh_section_statuses()
-        return all(
-            c.status in (CiteStatus.VERIFIED, CiteStatus.REMOVED) for c in self.citations
+        if any(
+            c.status in (CiteStatus.PENDING, CiteStatus.NEEDS_REVIEW)
+            for c in self.citations
+        ):
+            return False
+        return not self.citations or any(
+            c.status is CiteStatus.VERIFIED for c in self.citations
         )
 
 

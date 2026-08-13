@@ -53,6 +53,12 @@ class BrainstormRole(str, Enum):
 class Idea(BaseModel):
     id: str
     text: str
+    #: The one-sentence assertion this idea makes, as opposed to the topic
+    #: `text` names. Retrieval and verification need something a source can
+    #: support: "Analyze how weights are treated" cannot be entailed by
+    #: anything, while "Weights are published information under the EAR" can.
+    #: Empty when the generator produced only a topic (REMEDIATION §25).
+    claim: str = ""
     angle: str = ""
     novelty_note: str = ""
     status: IdeaStatus = IdeaStatus.CANDIDATE

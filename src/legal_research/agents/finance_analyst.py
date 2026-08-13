@@ -11,6 +11,7 @@ from typing import Any
 
 from ..citations.verifier import support_score
 from ..llm.base import ChatMessage, DecodingPolicy
+from ..llm.pool import GEMMA
 from ..models import Authority, Relation, SourceType
 from .base import Agent, AgentContext, AgentResult
 from .legal_researcher import SUPPORT_CUTOFF
@@ -24,7 +25,7 @@ _SYSTEM = (
 
 class FinanceAnalyst(Agent):
     name = "Finance Analyst"
-    expert_role = "finance"
+    expert_role = GEMMA
 
     def act(self, ctx: AgentContext, **kwargs: Any) -> AgentResult:
         topics: list[str] = kwargs.get("topics") or self._default_topics(ctx)

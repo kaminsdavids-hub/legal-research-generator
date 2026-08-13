@@ -2,10 +2,10 @@
 
 Two backends behind one :class:`Retriever` protocol:
 
-* :class:`MockRetriever` — deterministic lexical scorer with zero dependencies. It
-  is the default and is what CI uses (no GPU, no network).
+* :class:`MockRetriever` — deterministic lexical scorer with zero dependencies.
+  Used by CI and as a graceful fallback when dense retrieval deps are absent.
 * :class:`FaissRetriever` — real local FAISS + sentence-transformers embeddings,
-  used on the Spark when ``LRG_RETRIEVER_MODE=faiss``.
+  used by the default Spark profile when ``LRG_RETRIEVER_MODE=faiss``.
 """
 
 from __future__ import annotations
@@ -89,6 +89,8 @@ class FaissRetriever(Retriever):  # pragma: no cover - exercised only on the Spa
         from sentence_transformers import SentenceTransformer
 
         self._corpus = corpus
+        self._embed_model = embed_model
+        self._nemotron_prompt_mode = "nemotron-3-embed" in embed_model.lower()
         self._model = SentenceTransformer(embed_model)
         self._meta: list[tuple[str, str, str]] = []
         texts: list[str] = []
@@ -96,15 +98,31 @@ class FaissRetriever(Retriever):  # pragma: no cover - exercised only on the Spa
             for i, passage in enumerate(record.passages):
                 self._meta.append((record.id, passage, f"p.{i + 1}"))
                 texts.append(passage)
-        embeddings = self._model.encode(texts, normalize_embeddings=True)
+        embeddings = self._encode_documents(texts)
         embeddings = np.asarray(embeddings, dtype="float32")
         self._index = faiss.IndexFlatIP(embeddings.shape[1])
         self._index.add(embeddings)
 
+    def _encode_documents(self, texts: list[str]):
+        encode_document = getattr(self._model, "encode_document", None)
+        if callable(encode_document):
+            return encode_document(texts, normalize_embeddings=True)
+        if self._nemotron_prompt_mode:
+            texts = [f"document: {text}" for text in texts]
+        return self._model.encode(texts, normalize_embeddings=True)
+
+    def _encode_queries(self, texts: list[str]):
+        encode_query = getattr(self._model, "encode_query", None)
+        if callable(encode_query):
+            return encode_query(texts, normalize_embeddings=True)
+        if self._nemotron_prompt_mode:
+            texts = [f"query: {text}" for text in texts]
+        return self._model.encode(texts, normalize_embeddings=True)
+
     def search(self, query: str, k: int = 5) -> list[RetrievedPassage]:
         import numpy as np
 
-        q = self._model.encode([query], normalize_embeddings=True)
+        q = self._encode_queries([query])
         q = np.asarray(q, dtype="float32")
         scores, idx = self._index.search(q, min(k, len(self._meta)))
         out: list[RetrievedPassage] = []

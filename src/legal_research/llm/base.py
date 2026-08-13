@@ -44,6 +44,7 @@ class GenerationConfig:
     top_p: float = 0.95
     max_tokens: int = 1024
     seed: int | None = None
+    keep_alive: str | None = None
 
 
 @runtime_checkable
