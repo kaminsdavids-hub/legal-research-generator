@@ -1980,3 +1980,35 @@ conscientious and is often waste. The cheap check is which code paths the fix
 actually reaches; here that was three greps and a classifier pass over stored
 data, against forty minutes of GPU time and a result that would have been
 identical.
+
+---
+
+## 27. NLI gating end to end: no change
+
+The one configuration §14 could not reach. §14 compared scorers by re-scoring a
+fixed set of pairs, which holds retrieval constant and asks only "would a
+different scorer have judged these differently". This run put NLI in the live
+gate, so it shaped which authorities survived to the manuscript as the exchange
+proceeded.
+
+| gate | authorities grounded |
+|---|---|
+| lexical, headnote corpus (§13) | 1 / 14 |
+| lexical, full-text corpus (§16) | 1 / 10 |
+| **NLI, headnote corpus (this run)** | **1 / 14** |
+
+Zero fallback warnings in the log, so the gate really was `NliSupportScorer` and
+not a quiet substitution — the §21 logging earning its place immediately.
+
+**The survivor is the same false positive.** Brown v. Entertainment Merchants —
+"Courts do not create new categories of unprotected speech by balancing costs and
+benefits" — matched to "There is no requirement that protected information be
+readable or understandable by humans". Those are unrelated. It is the identical
+pair §14 flagged, surviving now under a different scorer, which makes true
+survival effectively 0 of 14 rather than 1.
+
+**This closes the scorer question.** Three scorers re-scoring fixed pairs, and
+now one of them gating a live run end to end, all give the same answer. Whatever
+limits citation survival in this loop, it is not the support scorer — and D25's
+reading, that it is the generator and retrieval, is unchanged by everything in
+§20–§27.
