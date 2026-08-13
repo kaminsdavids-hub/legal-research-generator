@@ -1936,3 +1936,47 @@ corpus with real claims is what would show whether the answers are any good. The
 citation-survival rate on live models remains the open measurement, and §14–§19
 should be re-run against this pipeline before anything further is concluded from
 those numbers — they were all taken while topics were being verified.
+
+---
+
+## 26. §14–§19 did not need re-running, and the reason is worth recording
+
+§25 closed by saying §14–§19's numbers "were taken while topics were being
+verified and should be re-measured". That was wrong, and checking it before
+spending the model time is the only reason it did not become a forty-minute
+confirmation of a false premise.
+
+**Three checks, all negative.**
+
+*Were the maieutic claims ever topics?* No — **39 of 39** across all three
+collected arms are assertable by the same `is_assertable` that rejects the
+pipeline's titles. They read "The First Amendment protects expressive material,
+including model weights", not "Analyze how weights are treated". The propositions
+came from the dialectic engine, which emits assertions; the Ideator, which emits
+topics, is not in that path.
+
+*Could the scorer have silently degraded?* No. `evals/compare_support_scorers.py`
+was built in §14 precisely to make that impossible: it checks each scorer's
+concrete class against what was requested and raises `FellBackToLexical` rather
+than proceeding. The guard that §21 later added to production had already been
+applied to the experiment.
+
+*Do the §21–§25 fixes touch the loop at all?* No. `modules/maieutic/` imports
+nothing from `agents/ideator.py`, `agents/legal_researcher.py` or
+`agents/writer.py`.
+
+**So §14–§19 stand as measured.** The scorer is not the bottleneck, the prompt
+framing is not, the corpus is not, retrieval leaves real headroom, and reranking
+on an independent signal does not close it.
+
+**What was genuinely unmeasured.** Those end-to-end runs used
+`support_scorer: lexical` as the live gate — §14 compared scorers by *re-scoring
+fixed pairs*, which holds retrieval constant, and no run has ever had NLI both
+gating and shaping what survives end to end. That is the one re-run with new
+information in it, and it is what was actually run.
+
+**The general point.** "Re-measure everything downstream of a fix" sounds
+conscientious and is often waste. The cheap check is which code paths the fix
+actually reaches; here that was three greps and a classifier pass over stored
+data, against forty minutes of GPU time and a result that would have been
+identical.
