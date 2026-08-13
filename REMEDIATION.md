@@ -1845,3 +1845,46 @@ passes for the right reason rather than because a topic matched itself.
 shadowed the `drafted = 0` section counter, so every section after the first
 silently produced a single paragraph and the manuscript fell from 7,500+ words to
 2,142. The word-range test caught it. Renamed to `drafted_paragraphs`.
+
+---
+
+## 24. The nine verifications were one title
+
+The §23 run reported **9 of 39 verified** — the first non-zero result after
+0/61 and 0/122. Checking what had verified before reporting it:
+
+```
+1 distinct verified proposition:
+  Analyze how AI-generated model weights and training data could be
+  treated under existing law
+```
+
+All nine were the same proposition, and it is a topic title. §22's
+`is_assertable` should have caught it; the opener list held the gerund
+`"analyzing"` and not the imperative `"analyze"`, so the one form the Ideator
+had actually produced was the one form not covered. A title then matched a
+passage on shared vocabulary at 0.74 and passed.
+
+Had the headline been reported unexamined, "0 → 9 verified" would have read as
+the fix working, when what it measured was a classifier gap.
+
+**Fixed twice, because the first fix was also wrong.** Generating openers from
+stems — `stem + ("e", "es", "ing")` — produced `reviewe`, `reviewes`,
+`reviewing` and never `review`, so the base form of several verbs stayed
+uncovered. That is clever and wrong in the same way the original list was; the
+openers are now written out explicitly, with the reason recorded at the
+definition so nobody regenerates them. Interrogative openers (`whether`, `how`,
+`why`, `what`) are covered too, since the Ideator produces those as well.
+
+**Where this leaves the number.** Offline against the sample corpus the pipeline
+verifies 14 of 105, all one proposition — the raw idea, which *is* a claim. That
+is a real verification rather than a title matching itself, but "14" overstates
+it: it is one proposition cited fourteen times. The honest summary is that the
+pipeline can now verify the claims it is given, and is given very few distinct
+ones, because the Ideator emits topics and only the thesis survives
+`is_assertable`.
+
+**The remaining work is upstream of everything in §21–§24.** The Ideator should
+emit claims, not titles. Every fix in this sequence has been damage control on a
+generator that produces research topics where the pipeline needs assertions, and
+no amount of classification downstream turns a topic into a claim.

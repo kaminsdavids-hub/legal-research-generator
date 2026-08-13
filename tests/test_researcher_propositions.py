@@ -48,3 +48,34 @@ def test_a_claim_that_merely_mentions_analysis_is_still_a_claim() -> None:
     check only rejects the shapes the Ideator actually produces.
     """
     assert is_assertable("Courts have rejected the analysis the agency proposes.")
+
+
+#: Verbatim from the run that "verified" 9 citations. All nine were this one
+#: proposition, and it is a title -- it passed only because the opener list held
+#: the gerund "analyzing" and not the imperative "analyze".
+OBSERVED_IMPERATIVE_TITLE = (
+    "Analyze how AI-generated model weights and training data could be treated "
+    "under existing law"
+)
+
+
+def test_the_imperative_title_that_faked_nine_verifications_is_rejected() -> None:
+    assert not is_assertable(OBSERVED_IMPERATIVE_TITLE)
+
+
+def test_imperative_and_gerund_forms_are_both_topics() -> None:
+    for stem in ("Analyze", "Analyzing", "Investigate", "Examine", "Evaluate", "Review"):
+        assert not is_assertable(f"{stem} the scope of the exclusion"), stem
+
+
+def test_an_interrogative_opener_is_a_topic_not_a_claim() -> None:
+    for opener in ("Whether", "How", "Why", "What"):
+        assert not is_assertable(f"{opener} the exclusion reaches model weights")
+
+
+def test_a_claim_containing_a_topic_word_is_still_a_claim() -> None:
+    """Only the *opening* marks a topic; the check must not reject prose that
+    merely uses the vocabulary.
+    """
+    assert is_assertable("Courts have rejected the analysis the agency proposes.")
+    assert is_assertable("The record does not support review of that question.")

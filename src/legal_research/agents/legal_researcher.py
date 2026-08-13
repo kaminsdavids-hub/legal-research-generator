@@ -22,11 +22,31 @@ SUPPORT_CUTOFF = 0.34
 #: model whether a passage entails a title returns ~0 by construction. A live
 #: pipeline run removed 122 of 122 citations that way, every one of them for
 #: "source does not support the proposition" (REMEDIATION §22).
+#: Gerund *and* imperative forms. A gerund-only list let "Analyze how model
+#: weights could be treated..." through as a claim, and it became the only
+#: proposition that "verified" in a live run -- a title matching a passage on
+#: shared vocabulary, which is precisely what this check exists to stop.
+#:
+#: Written out rather than generated from stems: generating "review" + suffixes
+#: produced "reviewe"/"reviewes" and never the base form, so the word the
+#: Ideator actually uses was the one form not covered.
 _TOPIC_OPENERS = (
-    "analyzing", "analysing", "investigating", "exploring", "examining",
-    "assessing", "evaluating", "understanding", "comparing", "revisiting",
-    "rethinking", "towards", "toward", "a study", "a case study", "an analysis",
+    "analyze ", "analyzes ", "analyzing ", "analyse ", "analysing ",
+    "investigate ", "investigates ", "investigating ",
+    "explore ", "explores ", "exploring ",
+    "examine ", "examines ", "examining ",
+    "assess ", "assesses ", "assessing ",
+    "evaluate ", "evaluates ", "evaluating ",
+    "understand ", "understanding ",
+    "compare ", "compares ", "comparing ",
+    "revisit ", "revisiting ", "rethink ", "rethinking ",
+    "consider ", "considering ", "discuss ", "discussing ",
+    "review ", "reviews ", "reviewing ", "survey ", "surveying ",
+    "identify ", "identifying ", "describe ", "describing ",
+    "outline ", "outlining ",
+    "towards", "toward", "a study", "a case study", "an analysis", "an overview",
     "the role of", "the impact of", "the case for", "the future of",
+    "how ", "why ", "whether ", "what ",
 )
 
 #: Markers of a title even when it does not start with a gerund.
