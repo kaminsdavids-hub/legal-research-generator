@@ -68,6 +68,18 @@ def _last_user(messages: list[ChatMessage]) -> str:
     return ""
 
 
+def _point_from(user_message: str) -> str:
+    """The ``Point:`` line the Writer puts in its drafting prompt, if present."""
+    for line in user_message.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("point:"):
+            point = stripped.split(":", 1)[1].strip()
+            if point and not point.endswith((".", "?", "!")):
+                point += "."
+            return point
+    return ""
+
+
 def _keywords(text: str, limit: int = 6) -> list[str]:
     words = re.findall(r"[A-Za-z][A-Za-z-]{3,}", text.lower())
     stop = {
@@ -170,6 +182,15 @@ class MockLLM(LLMClient):
         extras = [b for b in _BODIES if b not in (short, long_)]
         rng.shuffle(extras)
         body = [short, long_, *extras[: rng.randint(1, 2)]]
+
+        # State the point the section is being drafted from. Real drafting does
+        # this -- a paragraph arguing a proposition asserts it -- and without it
+        # the mock produced prose that mentioned nothing citable, so a citation
+        # could only ever be grounded in a topic rather than in a claim
+        # (REMEDIATION §23).
+        point = _point_from(_last_user(messages))
+        if point:
+            body.append(point)
         rng.shuffle(body)
         return " ".join([opener, *body, closer])
 

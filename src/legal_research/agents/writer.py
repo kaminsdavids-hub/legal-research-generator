@@ -38,6 +38,42 @@ def _count_words(text: str) -> int:
 def _split_paragraphs(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
 
+
+#: Sentence boundaries, avoiding the abbreviations legal prose is full of.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"\u201c])")
+
+#: Abbreviations that end in a period without ending a sentence.
+_ABBREVIATIONS = (
+    " v.", " no.", " cf.", " id.", " ch.", " art.", " sec.", " cl.", " pt.",
+    " u.s.", " f.2d", " f.3d", " f. supp.", " c.f.r.", " stat.", " ed.", " al.",
+)
+
+
+
+
+
+
+
+#: A claim shorter than this is a fragment, not something a source can support.
+_MIN_CLAIM_WORDS = 6
+
+#: Long hypotheses degrade entailment scoring, and a paragraph is not one claim.
+_MAX_CLAIM_WORDS = 60
+
+
+def split_sentences(paragraph: str) -> list[str]:
+    """Split *paragraph* into sentences, keeping legal abbreviations intact."""
+    text = " ".join(paragraph.split())
+    parts: list[str] = []
+    for candidate in _SENTENCE_END.split(text):
+        if parts and parts[-1].lower().endswith(_ABBREVIATIONS):
+            parts[-1] = f"{parts[-1]} {candidate}"
+        else:
+            parts.append(candidate)
+    return [p.strip() for p in parts if p.strip()]
+
+
+
 _COUNTER_SYSTEM = (
     "TASK: write\n"
     "You are a skeptical appellate advocate. Draft the strongest concise "
@@ -95,7 +131,7 @@ class WriterAgent(Agent):
                     section.content = content
                     section.status = SectionStatus.DRAFTED
 
-            prose = self._draft_section_prose(
+            drafted_paragraphs = self._draft_section_prose(
                 ctx,
                 section.title,
                 propositions,
@@ -105,18 +141,21 @@ class WriterAgent(Agent):
             if is_counter_rebuttal:
                 scaffolded += 1
 
-            paragraphs = _split_paragraphs(prose)
             section.citation_ids = []
             rendered: list[str] = []
-            for i, paragraph in enumerate(paragraphs):
+            for paragraph, point in drafted_paragraphs:
                 marker = ""
-                if propositions:
-                    proposition = propositions[i % len(propositions)]
+                # Cite the paragraph for the point it was actually drafted from.
+                # That association exists at generation time; it used to be
+                # discarded and then re-derived by a second, independent
+                # round-robin, so a paragraph could be cited for a proposition it
+                # had never been written about (REMEDIATION §23).
+                if point:
                     try:
-                        citation = ctx.guard.ground(proposition)
+                        citation = ctx.guard.ground(point)
                         ctx.guard.assert_grounded(citation)
                     except GroundingError:
-                        blocked.append(proposition)
+                        blocked.append(point)
                     else:
                         bb.add_citation(citation)
                         section.citation_ids.append(citation.id)
@@ -155,7 +194,7 @@ class WriterAgent(Agent):
         propositions: list[str],
         target_words: int,
         on_progress: Callable[[list[str]], None] | None = None,
-    ) -> str:
+    ) -> list[tuple[str, str]]:
         if self._is_counter_rebuttal_title(section_title):
             thesis = ctx.blackboard.thesis or (propositions[0] if propositions else "the thesis")
             contrary_props = [
@@ -202,11 +241,14 @@ class WriterAgent(Agent):
             paragraphs = [f"Counterargument. {counter}".strip(), f"Rebuttal. {rebuttal}".strip()]
             if on_progress:
                 on_progress(paragraphs)
+            # The counterargument and the rebuttal are both offered for the
+            # thesis: one states the objection to it, the other defends it.
             return self._expand_section(
                 ctx,
                 section_title=section_title,
                 propositions=propositions,
                 paragraphs=paragraphs,
+                drafted_from=[thesis, thesis],
                 target_words=target_words,
                 on_progress=on_progress,
             )
@@ -228,11 +270,13 @@ class WriterAgent(Agent):
         ).strip()
         if on_progress:
             on_progress([first])
+        opening_point = propositions[0] if propositions else section_title
         return self._expand_section(
             ctx,
             section_title=section_title,
             propositions=propositions,
             paragraphs=[first],
+            drafted_from=[opening_point],
             target_words=target_words,
             on_progress=on_progress,
         )
@@ -243,10 +287,13 @@ class WriterAgent(Agent):
         section_title: str,
         propositions: list[str],
         paragraphs: list[str],
+        drafted_from: list[str],
         target_words: int,
         on_progress: Callable[[list[str]], None] | None = None,
-    ) -> str:
+    ) -> list[tuple[str, str]]:
         max_paragraphs = max(2, int(ctx.settings.draft_max_paragraphs_per_section))
+        # Each paragraph carries the point it was drafted from, so the citation
+        # loop does not have to guess it back out of the prose.
         paragraph_target = max(120, int(ctx.settings.draft_paragraph_target_words))
         client = ctx.pool.get(self.expert_role)
 
@@ -271,10 +318,13 @@ class WriterAgent(Agent):
             ).strip()
             if para:
                 paragraphs.append(para)
+                drafted_from.append(focus)
                 if on_progress:
                     on_progress(paragraphs)
 
-        return "\n\n".join(p.strip() for p in paragraphs if p.strip()).strip()
+        return [
+            (p.strip(), f) for p, f in zip(paragraphs, drafted_from, strict=True) if p.strip()
+        ]
 
     def _section_propositions(self, ctx: AgentContext, section: Any) -> list[str]:
         bb = ctx.blackboard

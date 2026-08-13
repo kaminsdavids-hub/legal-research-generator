@@ -1794,3 +1794,54 @@ than against the sentence it actually supports. The architecturally right target
 is the drafted sentence carrying the citation, which the Writer knows and does
 not record. That is the next thing worth building, and it is a larger change than
 this one.
+
+---
+
+## 23. The Writer already knew which claim each paragraph argued, and threw it away
+
+§22 stopped topic titles reaching the Verifier. This fixes the layer beneath it.
+
+`_expand_section` drafts each paragraph from a specific point:
+
+```python
+focus = propositions[len(paragraphs) % len(propositions)]
+```
+
+That association was discarded, and the citation loop then re-derived one with a
+*second, independent* round-robin:
+
+```python
+proposition = propositions[i % len(propositions)]
+```
+
+The two indices are computed over different sequences and need not agree, so a
+paragraph could be — and routinely was — cited for a proposition it had never
+been written about. The Verifier then asked a source to support that
+proposition. Both round-robins were doing arithmetic where the answer was
+already in scope.
+
+The fix is to stop throwing it away: `_expand_section` returns
+`(paragraph, point)` pairs and each paragraph is cited for the point it was
+actually drafted from. No text analysis, no inference.
+
+**Two heuristics were built and discarded before this.** The first extracted the
+paragraph's last sentence, on the theory that the marker sits at the end — it
+picks the transition ("The remainder of this Part defends the claim in detail").
+The second ranked sentences by content-word count — it picks connective prose,
+which is long and content-rich while committing to nothing. A third, scoring
+sentences for named authority, then failed on a signpost. At that point the
+approach was wrong, not the tuning: guessing which sentence a citation supports
+is a real NLP problem, and the answer was available structurally the whole time.
+The discarded work is recorded here because "I tried three heuristics and each
+failed on plausible input" is the evidence for taking the structural route.
+
+**Measured.** Against the sample corpus, before: 0 of 61 verified. After: **14 of
+105 verified**, with propositions like "Private plaintiffs may not maintain
+aiding-and-abetting suits under Section 10(b)" — a claim a source can actually
+support. `tests/test_pipeline.py` asserts at least one verified citation and now
+passes for the right reason rather than because a topic matched itself.
+
+**A bug I introduced and caught.** Renaming the drafting result to `drafted`
+shadowed the `drafted = 0` section counter, so every section after the first
+silently produced a single paragraph and the manuscript fell from 7,500+ words to
+2,142. The word-range test caught it. Renamed to `drafted_paragraphs`.
