@@ -16,17 +16,55 @@ from .base import Agent, AgentContext, AgentResult
 
 SUPPORT_CUTOFF = 0.34
 
+#: Openers that mark a research *topic* rather than an assertable claim. The
+#: Ideator emits titles -- "Analyzing the Impact of X: A Case Study" -- which are
+#: serviceable retrieval queries and impossible entailment targets: asking an NLI
+#: model whether a passage entails a title returns ~0 by construction. A live
+#: pipeline run removed 122 of 122 citations that way, every one of them for
+#: "source does not support the proposition" (REMEDIATION §22).
+_TOPIC_OPENERS = (
+    "analyzing", "analysing", "investigating", "exploring", "examining",
+    "assessing", "evaluating", "understanding", "comparing", "revisiting",
+    "rethinking", "towards", "toward", "a study", "a case study", "an analysis",
+    "the role of", "the impact of", "the case for", "the future of",
+)
+
+#: Markers of a title even when it does not start with a gerund.
+_TOPIC_MARKERS = (": a case study", ": an analysis", ": implications", ": a survey")
+
+
+def is_assertable(text: str) -> bool:
+    """Whether *text* is a claim a source could support, rather than a topic.
+
+    Deliberately conservative: it only rejects the shapes the Ideator actually
+    produces. A false negative costs a citation the thesis as its proposition,
+    which is still true of the paper; a false positive puts a title back in front
+    of the entailment check, which is the failure this exists to stop.
+    """
+    stripped = " ".join(text.strip().split()).lower()
+    if not stripped:
+        return False
+    if stripped.startswith(_TOPIC_OPENERS):
+        return False
+    return all(marker not in stripped for marker in _TOPIC_MARKERS)
+
 
 class LegalResearcher(Agent):
     name = "Legal Researcher"
     expert_role = "saul"
 
     def act(self, ctx: AgentContext, **kwargs: Any) -> AgentResult:
-        propositions: list[str] = kwargs.get("propositions") or self._default_props(ctx)
+        queries: list[str] = kwargs.get("propositions") or self._default_props(ctx)
 
         bb = ctx.blackboard
-        for proposition in propositions:
-            hits = ctx.retriever.search(proposition, k=4)
+        for query in queries:
+            # The query and the proposition are not the same thing. A topic title
+            # retrieves usefully but cannot be entailed by anything, and it is the
+            # proposition that the Verifier later asks a source to support. When
+            # the query is a title, the claim the authority is actually being
+            # cited for is the paper's thesis.
+            proposition = query if is_assertable(query) else (bb.thesis or query)
+            hits = ctx.retriever.search(query, k=4)
             legal_hits = [
                 h
                 for h in hits
