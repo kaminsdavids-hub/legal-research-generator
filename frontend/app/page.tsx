@@ -42,6 +42,10 @@ const STEPS = [
   { key: "novelty", label: "Novelty", icon: FlaskConical, run: api.novelty },
 ] as const;
 
+//: Where the active session id lives between page loads. Without this the app
+//: created a new manuscript on every refresh (see the mount effect below).
+const SESSION_KEY = "lrg.session_id";
+
 export default function Home() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [bb, setBb] = useState<Blackboard | null>(null);
@@ -52,11 +56,48 @@ export default function Home() {
 
   useEffect(() => {
     (async () => {
-      const [cfg, session] = await Promise.all([api.config(), api.createSession(title)]);
+      const cfg = await api.config();
       setConfig(cfg);
+
+      // Resume the stored session before creating one. This effect used to POST
+      // /api/sessions unconditionally on every mount, so a page refresh silently
+      // started a new manuscript and orphaned the previous one on the server --
+      // every idea, draft and citation the author had built was still on disk
+      // but unreachable from the UI.
+      const stored =
+        typeof window === "undefined" ? null : window.localStorage.getItem(SESSION_KEY);
+      if (stored) {
+        try {
+          const existing = await api.getSession(stored);
+          setBb(existing);
+          if (existing.title) setTitle(existing.title);
+          return;
+        } catch {
+          // The id no longer resolves -- the backend was restarted, or the
+          // session was pruned. Fall through and start a fresh one rather than
+          // leaving the app with no session at all.
+        }
+      }
+
+      const session = await api.createSession(title);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(SESSION_KEY, session.session_id);
+      }
       setBb(session);
     })().catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Resuming by default means there has to be a deliberate way out, or the
+  // author is stuck in one manuscript forever with no route to a second.
+  const startNewSession = useCallback(async () => {
+    const session = await api.createSession("Untitled Research Paper");
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SESSION_KEY, session.session_id);
+    }
+    setTitle(session.title || "Untitled Research Paper");
+    setReport("");
+    setBb(session);
   }, []);
 
   const refreshReport = useCallback(async (id: string) => {
@@ -208,6 +249,21 @@ export default function Home() {
           >
             {busy === "run-all" ? <Loader2 className="animate-spin" size={14} /> : <PlayCircle size={14} />}
             Run full pipeline
+          </Button>
+          <Button
+            variant="subtle"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Start a new paper? The current one stays on the server but " +
+                    "this browser will stop resuming it."
+                )
+              ) {
+                startNewSession().catch(console.error);
+              }
+            }}
+          >
+            New paper
           </Button>
           <a
             href={api.pdfUrl(bb.session_id)}
