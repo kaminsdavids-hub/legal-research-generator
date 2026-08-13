@@ -1742,3 +1742,55 @@ corpus configuration. Also fixed in the same pass (§20 above): `is_shippable`
 returning True when every citation had been removed. Not fixed: the underlying
 citation-survival rate, which §14–§19 traced to retrieval and the generator
 rather than to any gate, and which no experiment has yet moved.
+
+---
+
+## 22. The propositions were not propositions
+
+§21 fixed the scorer and the corpus. A clean re-run — NLI confirmed active at
+threshold 0.55, `openweights.jsonl` loaded — still verified **0 of 122**, every
+one refused for "source does not support the proposition", with scores at median
+0.01 and maximum 0.02. Not near-misses. Near-zero.
+
+Sampling what was actually being checked settled it:
+
+```
+PROP : Analyzing The Impact of Open Model Weights on Regulatory Compliance
+       Under the EAR: A Case Study On Deep Learning
+PROP : Investigating Potential Security Threats Associated With Sharing AI
+       Models Across International Borders: Implications For Open Model Weight...
+```
+
+Those are research topics. The Ideator emits titles; `_default_props` passed idea
+text straight through; and the same string became both the retrieval query *and*
+the `Authority.proposition` the Verifier later asks a source to entail. Asking an
+NLI model whether a passage entails a title returns ~0 by construction. **The
+gate was working perfectly on an impossible question.**
+
+This is the fourth distinct cause behind a citation-survival number in this
+repository, and the first one that is squarely a bug rather than a limit:
+
+| § | cause | verdict |
+|---|---|---|
+| 14 | the support scorer | not it — three scorers agree |
+| 15 | the prompt framing | not it — p = 0.33, and it cost the objections |
+| 16 | the corpus text | not it end-to-end |
+| 21 | scorer silently degraded to lexical | **real, fixed** |
+| 21 | corpus pointed at a 3.4 KB sample | **real, fixed** |
+| 22 | proposition was a topic title | **real, fixed** |
+
+**The fix.** The query and the proposition are now separate concerns. A title
+still retrieves — it is a serviceable search string — but when the query is not
+assertable, the claim the authority is recorded as supporting is the paper's
+thesis, which is what it is actually being cited for. `is_assertable` is
+conservative and rejects only the shapes the Ideator produces: gerund openers and
+case-study suffixes. A false negative costs a citation the thesis as its
+proposition, still true of the paper; a false positive puts a title back in front
+of the entailment check.
+
+**What this does not fix.** Attaching the thesis is honest but coarse: a source
+cited in section four is being checked against the paper's overall claim rather
+than against the sentence it actually supports. The architecturally right target
+is the drafted sentence carrying the citation, which the Writer knows and does
+not record. That is the next thing worth building, and it is a larger change than
+this one.
