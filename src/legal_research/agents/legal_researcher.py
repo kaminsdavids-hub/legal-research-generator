@@ -129,7 +129,10 @@ class LegalResearcher(Agent):
 
     def _default_props(self, ctx: AgentContext) -> list[str]:
         bb = ctx.blackboard
-        props = [i.text for i in bb.selected_ideas()]
+        # An idea's claim is what a source can support; its text is the topic
+        # that claim is about. Prefer the claim wherever the Ideator supplied
+        # one (REMEDIATION §25).
+        props = [i.claim or i.text for i in bb.selected_ideas()]
         if bb.thesis:
             props.insert(0, bb.thesis)
         return props or ["the governing legal standard"]

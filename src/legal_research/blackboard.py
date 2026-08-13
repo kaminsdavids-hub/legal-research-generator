@@ -59,9 +59,17 @@ class Blackboard(BaseModel):
 
     # ---- ideas ---------------------------------------------------------------------
 
-    def add_idea(self, text: str, angle: str = "", novelty_note: str = "") -> Idea:
+    def add_idea(
+        self, text: str, angle: str = "", novelty_note: str = "", claim: str = ""
+    ) -> Idea:
         self._idea_seq += 1
-        idea = Idea(id=f"idea-{self._idea_seq:03d}", text=text, angle=angle, novelty_note=novelty_note)
+        idea = Idea(
+            id=f"idea-{self._idea_seq:03d}",
+            text=text,
+            claim=claim,
+            angle=angle,
+            novelty_note=novelty_note,
+        )
         self.ideas.append(idea)
         return idea
 

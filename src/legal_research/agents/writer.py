@@ -338,7 +338,9 @@ class WriterAgent(Agent):
             props.append(bb.thesis)
         for idea_id in section.idea_ids:
             try:
-                text = bb.get_idea(idea_id).text
+                idea = bb.get_idea(idea_id)
+                # Draft from, and cite for, the claim rather than the topic.
+                text = idea.claim or idea.text
                 if text not in props:
                     props.append(text)
             except KeyError:

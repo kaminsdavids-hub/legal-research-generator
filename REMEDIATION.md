@@ -1888,3 +1888,51 @@ ones, because the Ideator emits topics and only the thesis survives
 emit claims, not titles. Every fix in this sequence has been damage control on a
 generator that produces research topics where the pipeline needs assertions, and
 no amount of classification downstream turns a topic into a claim.
+
+---
+
+## 25. The Ideator now emits claims, which is where §21–§24 should have started
+
+Every fix in §21–§24 was downstream damage control. The scorer was degraded, the
+corpus was wrong, the proposition was a round-robin topic, the classifier had
+gaps — but underneath all of it the generator was producing *research topics*
+where the pipeline needed *assertions*, and no amount of classification
+downstream turns a topic into a claim.
+
+**The change.** An `Idea` now carries a `claim` alongside its `text`: one
+declarative sentence the paper asserts and a source could support or contradict.
+The Ideator asks for `TOPIC || CLAIM` per bullet and validates what comes back
+with the same `is_assertable` the researcher uses — an unassertable "claim" is
+rejected to empty rather than passed on, because an empty claim falls back to the
+thesis (which is a claim) while a bad one travels to the Verifier and gets asked
+of a source. That is exactly how a title came to account for all nine
+"verifications" in §24.
+
+A bullet without the separator still yields a topic, so a generator that ignores
+the format degrades to the old behaviour rather than losing the idea.
+
+The researcher and the writer both prefer `idea.claim or idea.text`, so the
+proposition retrieved on, drafted from, and verified against is the same
+assertion.
+
+**Measured, offline against the sample corpus.**
+
+| | before §25 | after |
+|---|---|---|
+| distinct propositions put to sources | 4 | 4 |
+| of those, assertable claims | 1 | **4** |
+| of those, topic titles | 3 | **0** |
+
+Verified citations stay at 14 of 109, all of the thesis. That is the correct
+outcome and worth being plain about: the mock's other three claims are invented
+("priority of claims explains why...") and the corpus does not support them, so
+they fail verification as they should. The fix does not make more citations
+verify; it makes the question asked of every source a fair one. Whether a claim
+then verifies depends on whether the corpus actually supports it, which is what
+the gate is for.
+
+**What is still open.** The gate now receives well-formed questions, and a real
+corpus with real claims is what would show whether the answers are any good. The
+citation-survival rate on live models remains the open measurement, and §14–§19
+should be re-run against this pipeline before anything further is concluded from
+those numbers — they were all taken while topics were being verified.

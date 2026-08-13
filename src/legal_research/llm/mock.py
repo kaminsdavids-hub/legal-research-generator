@@ -163,14 +163,29 @@ class MockLLM(LLMClient):
     def _task_ideate(self, messages: list[ChatMessage], rng: random.Random) -> str:
         kws = _keywords(_last_user(messages)) or ["the doctrine"]
         base = kws[0]
+        # "TOPIC || CLAIM": the claim is what a source can support, and the
+        # pipeline verifies against it. A mock that emitted topics only let the
+        # integration tests pass while verifying titles against themselves.
         angles = [
-            f"Reframe {base} as a monitoring-cost problem rather than a fairness problem.",
-            f"Argue that the circuit split over {base} is really a disagreement about remedies, not rights.",
-            f"Import a finance concept — priority of claims — to explain why {base} produces perverse incentives.",
-            f"Show that the leading case on {base} rests on a factual assumption that no longer holds.",
+            (
+                f"Reframe {base} as a monitoring-cost problem rather than a fairness problem",
+                f"The doctrine governing {base} allocates monitoring costs rather than vindicating fairness.",
+            ),
+            (
+                f"Argue the circuit split over {base} is about remedies, not rights",
+                f"The circuit split over {base} concerns the available remedy rather than the underlying right.",
+            ),
+            (
+                f"Import priority of claims to explain incentives under {base}",
+                f"Priority of claims explains why {base} produces incentives its drafters did not intend.",
+            ),
+            (
+                f"Show the leading case on {base} rests on a stale factual assumption",
+                f"The leading case on {base} rests on a factual assumption that no longer holds.",
+            ),
         ]
         rng.shuffle(angles)
-        return "\n".join(f"- {a}" for a in angles)
+        return "\n".join(f"- {topic} || {claim}" for topic, claim in angles)
 
     def _task_write(self, messages: list[ChatMessage], rng: random.Random) -> str:
         # Compose prose that always contains at least one very short and one very long
