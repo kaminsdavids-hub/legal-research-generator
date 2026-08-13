@@ -1692,3 +1692,53 @@ demonstration showed exactly that, `unanswered_attack` rising to −0.50 past
 `MAX_SHIFT`, so the declared order dominates at any distance greater than the
 bound while adjacent kinds may swap. The prose now says that, and two tests pin
 both halves.
+
+---
+
+## 21. The pipeline verified 0 of 61 citations, for two reasons and neither was the gate
+
+Running the full pipeline end to end against the live backend produced a
+9,653-word draft, 61 proposed citations, **0 verified, 61 removed**, an empty
+table of authorities — and `shippable=True`.
+
+**Where the removals came from.** All 61 failed the same rule, and it was not the
+interesting one. Rule 1 (authority must come from retrieval) passed: no
+hallucinated cites. Rule 2 (must resolve in the corpus) passed. Rule 3 (quotes
+exact) passed. Every removal was Rule 4, support scoring, with the reported
+threshold **0.34**.
+
+**0.34 is `LEXICAL_THRESHOLD`, and the configuration said `nli`.** The running
+API had `LRG_SUPPORT_SCORER=nli` in its environment and could import
+`sentence_transformers`; built by hand on the same box, `NliSupportScorer`
+constructs fine and scores 0.994 on a supporting pair. The process had simply
+been started at a moment when the cross-encoder could not be built,
+`build_support_scorer` caught the exception, returned lexical, said nothing, and
+the pipeline held that scorer for the process's entire lifetime. Every
+verification since had been token recall wearing the name of entailment.
+
+This is the third time silent degradation has cost this repository an
+investigation: §11.6 (a log wrapper that dropped a method), §14 (a scorer
+fallback that would have made the D7 experiment measure lexical three times).
+The fallback is correct — a missing extra should degrade rather than crash — so
+what changed is the silence. `build_support_scorer` now logs at WARNING with the
+mode requested, the exception, the substituted threshold, and the fact that
+scores are no longer comparable to a semantic run. Four tests cover it, including
+that a *chosen* lexical scorer logs nothing.
+
+**The scorer was not the whole story.** Re-scoring those same 61 citations with a
+working NLI model gave the same answer: **0/61 under lexical, 0/61 under NLI**.
+Consistent with §14, and it pointed at the second cause.
+
+**`LRG_CORPUS_PATH=data/corpus/sample_corpus.jsonl`** — 3.4 KB, unrelated to
+export control. The writer produced propositions about deemed exports and the
+published-information exclusion; retrieval attached the closest records a sample
+corpus could offer; the support check correctly refused all of them. The gate was
+working. It was being asked to confirm claims against a corpus that could not
+support them. Repointed at `openweights.jsonl` (40 citable records) and the
+service restarted, which also rebuilt the verifier with NLI.
+
+**What was fixed here, and what was not.** Fixed: the silent fallback, and the
+corpus configuration. Also fixed in the same pass (§20 above): `is_shippable`
+returning True when every citation had been removed. Not fixed: the underlying
+citation-survival rate, which §14–§19 traced to retrieval and the generator
+rather than to any gate, and which no experiment has yet moved.

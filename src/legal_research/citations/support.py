@@ -20,12 +20,15 @@ retriever's graceful degradation so the pipeline always runs.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from ..config import Settings, get_settings
 from .retriever import _tokens
+
+logger = logging.getLogger(__name__)
 
 LEXICAL_THRESHOLD = 0.34
 SEMANTIC_THRESHOLD = 0.55
@@ -193,20 +196,46 @@ class NliSupportScorer:  # pragma: no cover - requires the gpu extra / Spark
 
 
 def build_support_scorer(settings: Settings | None = None) -> SupportScorer:
-    """Select a scorer from settings, falling back to lexical if deps are absent."""
+    """Select a scorer from settings, falling back to lexical if deps are absent.
+
+    **A fallback is logged at WARNING, never silent.** This function returned a
+    lexical scorer while the configuration said ``nli``: the API process had been
+    started at a moment when the cross-encoder could not be constructed, kept the
+    fallback for its whole lifetime, and nothing anywhere said so. A full
+    pipeline run then removed 61 of 61 citations against a 0.34 threshold nobody
+    had configured, and reported the paper shippable. The same silent-degradation
+    shape has now cost this repository three separate investigations
+    (REMEDIATION §11.6, §14, §21).
+
+    Falling back is right -- a missing extra should degrade rather than crash.
+    Doing it quietly is what is wrong.
+    """
 
     s = settings or get_settings()
     mode = (s.support_scorer or "lexical").lower()
     override = s.support_threshold
 
+    def _fallback(reason: BaseException) -> SupportScorer:
+        logger.warning(
+            "support scorer %r was requested but could not be built (%s: %s); "
+            "falling back to lexical at threshold %s. Support is now token "
+            "recall, not entailment, and scores are not comparable to a "
+            "semantic run.",
+            mode,
+            type(reason).__name__,
+            str(reason)[:200],
+            override or LEXICAL_THRESHOLD,
+        )
+        return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
+
     if mode == "embedding":
         try:
             return EmbeddingSupportScorer(s.embed_model, override or SEMANTIC_THRESHOLD)
-        except Exception:  # noqa: BLE001 - fall back to lexical if the extra is missing
-            return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
+        except Exception as exc:  # noqa: BLE001 - degrade rather than crash, but say so
+            return _fallback(exc)
     if mode == "nli":
         try:
             return NliSupportScorer(s.nli_model, override or SEMANTIC_THRESHOLD)
-        except Exception:  # noqa: BLE001 - fall back to lexical if the extra is missing
-            return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
+        except Exception as exc:  # noqa: BLE001 - degrade rather than crash, but say so
+            return _fallback(exc)
     return LexicalSupportScorer(override or LEXICAL_THRESHOLD)
