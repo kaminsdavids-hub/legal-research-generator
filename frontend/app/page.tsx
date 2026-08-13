@@ -15,18 +15,28 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { BrainstormPanel } from "@/components/BrainstormPanel";
 import { CitationsPanel } from "@/components/CitationsPanel";
+import { DialecticPanel } from "@/components/DialecticPanel";
 import { IdeaBoard } from "@/components/IdeaBoard";
 import { ManuscriptPanel } from "@/components/ManuscriptPanel";
+import { ModelJuryPanel } from "@/components/ModelJuryPanel";
 import { Button } from "@/components/ui";
-import { api, type AppConfig, type Blackboard, type IdeaStatus } from "@/lib/api";
+import {
+  api,
+  type AppConfig,
+  type Blackboard,
+  type IdeaStatus,
+  type SocraticMode,
+  type SocraticReviseResponse,
+  type SocraticTurn,
+} from "@/lib/api";
 
-type Tab = "manuscript" | "citations";
+type Tab = "manuscript" | "citations" | "dialectic";
 
 const STEPS = [
   { key: "outline", label: "Outline", icon: ListTree, run: api.outline },
   { key: "research", label: "Research", icon: BookOpen, run: api.research },
   { key: "draft", label: "Draft", icon: PenLine, run: api.draft },
-  { key: "voice", label: "Voice", icon: Sparkles, run: api.voice },
+  { key: "voice", label: "Grammar", icon: Sparkles, run: api.voice },
   { key: "verify", label: "Verify", icon: CheckCircle2, run: api.verify },
   { key: "format", label: "Format", icon: Quote, run: api.format },
   { key: "novelty", label: "Novelty", icon: FlaskConical, run: api.novelty },
@@ -57,6 +67,59 @@ export default function Home() {
     }
   }, []);
 
+  // The full pipeline (run-all) is a single long-running request that can take
+  // many minutes against real models. Poll the session while it's in flight so
+  // the manuscript panel shows sections filling in live instead of leaving the
+  // user staring at a spinner with no feedback that anything is happening.
+  useEffect(() => {
+    if (busy !== "run-all" || !bb) return;
+    const sessionId = bb.session_id;
+    const interval = setInterval(() => {
+      api
+        .getSession(sessionId)
+        .then(setBb)
+        .catch(() => {
+          /* transient poll failure; next tick will retry */
+        });
+    }, 4000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, bb?.session_id]);
+
+  async function socraticRevise(
+    sectionId: string,
+    paragraphIndex: number,
+    message: string,
+    history: SocraticTurn[],
+    applyRevision: boolean,
+    mode: SocraticMode
+  ): Promise<SocraticReviseResponse> {
+    if (!bb) {
+      throw new Error("No active session");
+    }
+    setBusy("socratic");
+    try {
+      const sessionId = bb.session_id;
+      const response = await api.socraticRevise(
+        sessionId,
+        sectionId,
+        paragraphIndex,
+        message,
+        history,
+        applyRevision,
+        mode
+      );
+      if (response.applied) {
+        const next = await api.getSession(sessionId);
+        setBb(next);
+        await refreshReport(next.session_id);
+      }
+      return response;
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function withBusy(key: string, fn: () => Promise<Blackboard>) {
     setBusy(key);
     try {
@@ -65,7 +128,28 @@ export default function Home() {
       await refreshReport(next.session_id);
     } catch (e) {
       console.error(e);
-      alert(String(e));
+      if (key === "run-all" && bb) {
+        // The backend mutates the session in place as each pipeline stage
+        // completes, so even if this request was interrupted (client abort,
+        // proxy/funnel idle timeout, network drop), whatever the pipeline
+        // finished before the interruption is still on the server. Recover
+        // it instead of discarding a possibly-complete manuscript.
+        try {
+          const recovered = await api.getSession(bb.session_id);
+          setBb(recovered);
+          await refreshReport(recovered.session_id);
+          alert(
+            "The full-pipeline request was interrupted, but partial progress " +
+              "was recovered from the server. Check the manuscript panel; you " +
+              "may want to re-run remaining steps individually."
+          );
+        } catch (recoverError) {
+          console.error(recoverError);
+          alert(e instanceof Error ? e.message : "Request failed. Please retry.");
+        }
+      } else {
+        alert(e instanceof Error ? e.message : "Request failed. Please retry.");
+      }
     } finally {
       setBusy(null);
     }
@@ -94,7 +178,20 @@ export default function Home() {
               className="w-[28rem] max-w-full rounded border-none text-lg font-semibold text-ink focus:outline-none"
             />
             <div className="text-xs text-slate-400">
-              {config.llm_mode} · {config.retriever_mode} retriever · {config.citation_style}
+              {config.llm_mode} · {config.retriever_mode} retriever · {config.support_scorer} verify ·
+              {config.embed_model.split("/").at(-1) ?? config.embed_model} · {config.citation_style} · grammar {config.grammar_chain_enabled ? config.grammar_chain_roles.join("→") : "off"} · target {config.manuscript_target_min_words.toLocaleString()}-
+              {config.manuscript_target_max_words.toLocaleString()} words
+            </div>
+            <div className="text-[11px] text-slate-400">
+              saul={config.saul_model} · writer={config.writer_model} · gemma={config.gemma_model} ·
+              hermes={config.hermes_model} · hermes3={config.hermes3_model}
+            </div>
+            <div className="text-[11px] text-slate-400">
+              module chat={Object.values(config.multi_chat_models).join(" | ")} ·
+              verify={Object.values(config.multi_chat_verifiers).join(" | ")}
+            </div>
+            <div className="text-[11px] text-slate-400">
+              debug endpoints {config.debug_endpoints_enabled ? "on" : "off"}
             </div>
           </div>
         </div>
@@ -139,15 +236,30 @@ export default function Home() {
             {step.label}
           </Button>
         ))}
+        <Button
+          variant="subtle"
+          disabled={busy !== null}
+          onClick={() => withBusy("draft-essay", () => api.draftEssay(bb.session_id, 2000))}
+        >
+          {busy === "draft-essay" ? <Loader2 className="animate-spin" size={14} /> : <PenLine size={14} />}
+          Draft ~2,000 words
+        </Button>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-        <div className="grid min-h-0 grid-rows-2 gap-4">
+        <div className="grid min-h-0 grid-rows-3 gap-4">
           <BrainstormPanel
             bb={bb}
             onRefresh={setBb}
             onIdeate={(seed) =>
               withBusy("ideate", async () => api.ideate(bb.session_id, seed || null))
+            }
+          />
+          <ModelJuryPanel
+            modelMap={config.multi_chat_models}
+            verifierMap={config.multi_chat_verifiers}
+            onAsk={(message, history) =>
+              api.multiChat(bb.session_id, message, history)
             }
           />
           <IdeaBoard
@@ -160,7 +272,7 @@ export default function Home() {
 
         <div className="flex min-h-0 flex-col">
           <div className="mb-2 flex gap-1.5">
-            {(["manuscript", "citations"] as Tab[]).map((t) => (
+            {(["manuscript", "citations", "dialectic"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -174,17 +286,24 @@ export default function Home() {
             ))}
           </div>
           <div className="min-h-0 flex-1">
-            {tab === "manuscript" ? (
+            {tab === "manuscript" && (
               <ManuscriptPanel
                 bb={bb}
+                socraticBusy={busy === "socratic"}
                 onRevise={(sectionId, instruction) =>
                   withBusy("revise", async () =>
                     api.revise(bb.session_id, sectionId, instruction)
                   )
                 }
+                onSocratic={socraticRevise}
               />
-            ) : (
-              <CitationsPanel bb={bb} report={report} />
+            )}
+            {tab === "citations" && <CitationsPanel bb={bb} report={report} />}
+            {tab === "dialectic" && (
+              <DialecticPanel
+                modelMap={config.dialectic_models}
+                onAsk={(message) => api.dialectic(bb.session_id, message)}
+              />
             )}
           </div>
         </div>

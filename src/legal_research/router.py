@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .llm.base import ChatMessage, DecodingPolicy
-from .llm.pool import FINANCE, SAUL, WRITER, ExpertPool
+from .llm.pool import GEMMA, SAUL, WRITER, ExpertPool
 
 
 class RequestKind(str, Enum):
@@ -40,10 +40,6 @@ _FINANCE = {
     "basel", "capital", "collateral", "swap", "derivative", "liquidity", "bank",
     "banking", "securitization", "securitisation", "leverage", "margin", "hedge",
     "instrument", "counterparty", "solvency",
-}
-_HEAVY_QUANT = {
-    "model", "regression", "pricing", "quantitative", "calculate", "optimization",
-    "stochastic", "var", "monte", "valuation",
 }
 _BRAINSTORM = {
     "brainstorm", "ideate", "idea", "angle", "novel", "novelty", "framing",
@@ -88,20 +84,15 @@ class Router:
         if kind is RequestKind.LEGAL:
             return RoutingDecision(kind, SAUL, DecodingPolicy.COLD, True, rationale)
         if kind is RequestKind.FINANCE:
-            # Heavy quantitative finance is better handled by the reasoning writer
-            # engine; domain finance models are weaker reasoners (spec §1).
-            if _score(text, _HEAVY_QUANT) >= 2:
-                return RoutingDecision(
-                    RequestKind.FINANCE, WRITER, DecodingPolicy.BALANCED, False,
-                    rationale + " + heavy-quant -> writer engine",
-                )
-            return RoutingDecision(kind, FINANCE, DecodingPolicy.BALANCED, False, rationale)
+            # Finance/banking substance is handled by the general-purpose Gemma
+            # analyst; there is no dedicated finance model.
+            return RoutingDecision(kind, GEMMA, DecodingPolicy.BALANCED, False, rationale)
         if kind is RequestKind.BRAINSTORM:
             return RoutingDecision(kind, WRITER, DecodingPolicy.HOT, False, rationale)
         return RoutingDecision(RequestKind.SYNTHESIS, WRITER, DecodingPolicy.BALANCED, False, rationale)
 
     def _break_tie(self, text: str, scores: dict[RequestKind, int]) -> RequestKind:
-        client = self._pool.get("router")
+        client = self._pool.get(GEMMA)
         messages = [
             ChatMessage("system", "TASK: route\nReturn exactly one label: legal, finance, brainstorm, or synthesis."),
             ChatMessage("user", text),

@@ -21,6 +21,7 @@ from .retriever import Retriever
 from .support import (
     LexicalSupportScorer,
     SupportScorer,
+    best_support,
     build_support_scorer,
     lexical_support,
 )
@@ -37,8 +38,7 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", text.lower())).strip()
 
 
-# Backwards-compatible alias: the lexical scorer now lives in ``support``. The
-# Verifier's support test is pluggable and defaults to this lexical scorer.
+# Backwards-compatible alias: the lexical scorer now lives in ``support``.
 support_score = lexical_support
 
 
@@ -127,14 +127,18 @@ class CitationVerifier:
             )
 
         # Rule 4: the source must actually support the proposition. The scorer is
-        # pluggable — lexical by default, or a semantic NLI/embedding model on the
-        # Spark (see :mod:`legal_research.citations.support`).
-        best_passage = ""
-        best = 0.0
-        for passage in record.passages:
-            s = self._scorer.score(citation.proposition, passage)
-            if s > best:
-                best, best_passage = s, passage
+        # pluggable — semantic NLI by default in the live profile, with lexical
+        # fallback if semantic dependencies are unavailable.
+        #
+        # Scoring is clause-level: a proposition that joins two holdings from two
+        # different authorities is not entailed by either passage on its own, and
+        # scoring only the conjunction rejected every citation under NLI.
+        best, best_passage = best_support(
+            self._scorer,
+            citation.proposition,
+            record.passages,
+            threshold=self._threshold,
+        )
 
         if best < self._threshold:
             return VerificationResult(
@@ -175,8 +179,8 @@ def build_verifier(
 ) -> CitationVerifier:
     """Construct a verifier whose support test honors ``LRG_SUPPORT_SCORER``.
 
-    Defaults to the deterministic lexical scorer; on the Spark, setting
-    ``LRG_SUPPORT_SCORER=nli`` (or ``embedding``) swaps in a semantic scorer.
+    Defaults to semantic NLI in the live profile; lexical remains available for
+    deterministic runs and as a fallback when semantic dependencies are missing.
     """
 
     s = settings or get_settings()

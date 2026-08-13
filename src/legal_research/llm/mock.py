@@ -108,6 +108,11 @@ class MockLLM(LLMClient):
         text = self.chat(messages, config)
         yield from re.findall(r"\S+\s*", text)
 
+    def warm_up(self, prompt: str = ".") -> None:
+        """Mock models have no external process to warm."""
+
+        return
+
     # ---- task-specific responders -------------------------------------------------
 
     def _task_generic(self, messages: list[ChatMessage], rng: random.Random) -> str:

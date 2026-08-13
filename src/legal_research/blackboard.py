@@ -46,6 +46,11 @@ class Blackboard(BaseModel):
     toa: dict[str, list[str]] = Field(default_factory=dict)
     edits: list[EditRecord] = Field(default_factory=list)
     novelty: NoveltyAssessment | None = None
+    # Set when the last interview turn ran in degraded mode (interviewer model
+    # unreachable or empty), cleared on the next healthy turn. Without this the
+    # brainstorm endpoint returns only the Blackboard, so a dead model is
+    # indistinguishable in the UI from an interviewer that repeats itself.
+    brainstorm_degraded: str = ""
 
     _idea_seq: int = PrivateAttr(default=0)
     _section_seq: int = PrivateAttr(default=0)

@@ -1,7 +1,8 @@
 """Ideator (spec §2.2).
 
 HOT decoding: generates candidate theses, framings and novel angles, and proposes
-what would make the paper an original contribution. Feeds the idea board.
+what would make the paper an original contribution. Feeds the idea board. Runs on
+the Hermes role, backed by NVIDIA Nemotron 3 Nano, reasoning engine.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..llm.base import ChatMessage, DecodingPolicy
-from ..llm.pool import WRITER
+from ..llm.pool import HERMES
 from ..models import Idea
 from .base import Agent, AgentContext, AgentResult
 
@@ -23,7 +24,7 @@ _SYSTEM = (
 
 class Ideator(Agent):
     name = "Ideator"
-    expert_role = WRITER
+    expert_role = HERMES
 
     def act(self, ctx: AgentContext, **kwargs: Any) -> AgentResult:
         seed: str = kwargs.get("seed") or ctx.blackboard.thesis or "the doctrine at issue"
