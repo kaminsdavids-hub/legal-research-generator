@@ -20,6 +20,8 @@ import { ManuscriptPanel } from "@/components/ManuscriptPanel";
 import { Button } from "@/components/ui";
 import {
   api,
+  setApiKey,
+  UnauthorizedError,
   type AppConfig,
   type Blackboard,
   type IdeaStatus,
@@ -46,13 +48,29 @@ export default function Home() {
   const [report, setReport] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [title, setTitle] = useState("Untitled Research Paper");
+  const [needsKey, setNeedsKey] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
+  const connect = useCallback(async () => {
+    setConnectError(null);
+    try {
       const [cfg, session] = await Promise.all([api.config(), api.createSession(title)]);
       setConfig(cfg);
       setBb(session);
-    })().catch(console.error);
+      setNeedsKey(false);
+    } catch (err) {
+      // A 401 asks for a key; anything else is a broken or unreachable backend
+      // and must say so. Previously every failure landed in console.error and
+      // the page sat on "Connecting to backend…" forever, which made an
+      // unreachable backend and a wrong key look identical.
+      if (err instanceof UnauthorizedError) setNeedsKey(true);
+      else setConnectError(err instanceof Error ? err.message : String(err));
+    }
+  }, [title]);
+
+  useEffect(() => {
+    void connect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -110,6 +128,63 @@ export default function Home() {
     }
   }
 
+  if (needsKey) {
+    return (
+      <div className="grid h-screen place-items-center bg-slate-50 px-4">
+        <form
+          className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setApiKey(keyInput);
+            setKeyInput("");
+            void connect();
+          }}
+        >
+          <div className="mb-1 flex items-center gap-2">
+            <ScrollText className="text-accent" size={20} />
+            <h1 className="text-lg font-semibold text-slate-900">API key required</h1>
+          </div>
+          <p className="mb-4 text-sm text-slate-500">
+            This backend is gated. The key is stored in this browser only and sent as a
+            header; it is never built into the site.
+          </p>
+          <input
+            autoFocus
+            type="password"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder="LRG_API_KEY"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!keyInput.trim()}
+            className="mt-3 w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            Connect
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (connectError) {
+    return (
+      <div className="grid h-screen place-items-center bg-slate-50 px-4">
+        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="mb-1 text-lg font-semibold text-slate-900">Cannot reach the backend</h1>
+          <p className="mb-4 break-words text-sm text-slate-500">{connectError}</p>
+          <button
+            onClick={() => void connect()}
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!bb || !config) {
     return (
       <div className="grid h-screen place-items-center text-slate-400">
@@ -153,14 +228,25 @@ export default function Home() {
             {busy === "run-all" ? <Loader2 className="animate-spin" size={14} /> : <PlayCircle size={14} />}
             Run full pipeline
           </Button>
-          <a
-            href={api.pdfUrl(bb.session_id)}
-            target="_blank"
-            rel="noreferrer"
+          {/* Not an <a href>: a link cannot carry the key header, so a gated
+              backend would answer the browser's unauthenticated request with a
+              401 and the user would see a broken download with no explanation. */}
+          <button
+            onClick={async () => {
+              try {
+                const url = await api.downloadPdf(bb.session_id);
+                window.open(url, "_blank", "noreferrer");
+                // Give the new tab time to read it before the blob is dropped.
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              } catch (err) {
+                if (err instanceof UnauthorizedError) setNeedsKey(true);
+                else alert(err instanceof Error ? err.message : String(err));
+              }
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
           >
             <ScrollText size={14} /> Export
-          </a>
+          </button>
         </div>
       </header>
 
