@@ -38,6 +38,6 @@
 # this proxy is now fast by construction.
 #
 # Still synchronous on the backend and therefore still unusable through the
-# proxy: /run-all (the whole pipeline in one call), /multi-chat, /dialectic and
-# /revise/socratic. Those remain correct for a loopback client. See
-# deploy/README.md.
+# proxy: /multi-chat, /dialectic and /revise/socratic. Those are interactive and
+# short by nature, so converting them buys less; they remain correct for a
+# loopback client. See deploy/README.md.

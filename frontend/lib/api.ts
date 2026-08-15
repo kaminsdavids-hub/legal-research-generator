@@ -202,9 +202,12 @@ export interface JobStatus {
   step: string;
   state: JobState;
   error: string;
+  /** Only run-all sets one; for every other step the result is the blackboard. */
+  result: Record<string, unknown> | null;
 }
 
 export type JobStep =
+  | "run-all"
   | "brainstorm"
   | "ideate"
   | "outline"
@@ -215,6 +218,42 @@ export type JobStep =
   | "format"
   | "novelty"
   | "mechanism";
+
+export interface RunAllSummary {
+  steps: { agent: string; runtime: string; summary: string }[];
+  shippable: boolean;
+}
+
+/** Run the whole pipeline as one job.
+ *
+ *  Separate from `runStep` because it is the only step that takes arguments and
+ *  the only one whose result is not simply the blackboard: the per-agent log and
+ *  the shippable verdict exist nowhere else, so they come back on the job. */
+export async function runAll(
+  sessionId: string,
+  idea: string,
+  title: string,
+  onState?: (state: JobState) => void
+): Promise<{ blackboard: Blackboard; summary: RunAllSummary }> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ step: "run-all", idea, title }),
+  });
+  onState?.(started.state);
+
+  let status = started;
+  while (status.state === "running") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
+    onState?.(status.state);
+  }
+  if (status.state === "failed") throw new Error(`run-all failed: ${status.error}`);
+
+  return {
+    blackboard: await jsonFetch<Blackboard>(`/api/sessions/${sessionId}`),
+    summary: (status.result as unknown as RunAllSummary) ?? { steps: [], shippable: false },
+  };
+}
 
 /** Submit a step and resolve when it finishes, or reject with what went wrong.
  *

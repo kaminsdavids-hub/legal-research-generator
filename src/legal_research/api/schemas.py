@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -255,6 +255,12 @@ class JobRequest(BaseModel):
     #: the route, not against this type, so an unknown value gets a 400 naming
     #: the permitted set rather than a 422 with a schema dump.
     step: str
+    #: Only for step="run-all", which unlike every other step takes arguments.
+    #: Carried here rather than on a second submission route so that a client
+    #: and any proxy in front of it have one shape to learn.
+    idea: str = ""
+    title: str = "Untitled Research Paper"
+    max_ideas: int = 3
 
 
 class JobResponse(BaseModel):
@@ -264,3 +270,8 @@ class JobResponse(BaseModel):
     state: str
     #: Non-empty only when the step failed. The message, not the traceback.
     error: str = ""
+    #: A small terminal summary, present only on success and only for steps that
+    #: produce something outside the blackboard. `run-all` sets it to the
+    #: per-agent step log and the shippable verdict; every other step leaves it
+    #: null, because their result *is* the blackboard.
+    result: dict[str, Any] | None = None

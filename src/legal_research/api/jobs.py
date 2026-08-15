@@ -63,6 +63,12 @@ class Job:
     #: in the log, since handing a caller our stack frames is a disclosure with
     #: no benefit to them.
     error: str = ""
+    #: A small terminal summary, set by the work itself on success. Deliberately
+    #: small: the poll must stay cheap, so the blackboard never goes here. It
+    #: exists because `run-all` produces something that is not in the blackboard
+    #: at all -- the per-agent step log and the shippable verdict -- and that
+    #: would otherwise be lost the moment the run stopped being a request.
+    result: dict[str, Any] | None = None
     _finished: threading.Event = field(default_factory=threading.Event, repr=False)
 
     @property
@@ -93,6 +99,11 @@ class JobStore:
     def submit(self, session_id: str, step: str, work: Callable[[], Any]) -> Job:
         """Start ``work`` on a thread and return its job immediately.
 
+        Whatever ``work`` returns, if it is a ``dict``, becomes the job's
+        ``result``. Anything else is discarded -- the pipeline steps return
+        agent objects that mean nothing to a client, and serialising them would
+        put internals on the wire by accident.
+
         Raises :class:`SessionBusy` if a step is already running for this
         session.
         """
@@ -114,7 +125,9 @@ class JobStore:
 
     def _run(self, job: Job, work: Callable[[], Any]) -> None:
         try:
-            work()
+            outcome = work()
+            if isinstance(outcome, dict):
+                job.result = outcome
             job.state = JobState.SUCCEEDED
         except Exception as exc:  # noqa: BLE001 - a failed step must be reportable
             # The step failed, not the server. A job that vanished or hung would

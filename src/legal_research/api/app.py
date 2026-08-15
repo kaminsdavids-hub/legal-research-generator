@@ -548,6 +548,35 @@ _JOB_STEPS: dict[str, Callable[[Blackboard], object]] = {
     "mechanism": pipeline.mechanism_gate,
 }
 
+#: The whole pipeline in one job. Kept out of `_JOB_STEPS` because it is the one
+#: step that takes arguments and the one that produces something the blackboard
+#: does not hold -- the per-agent step log and the shippable verdict.
+RUN_ALL = "run-all"
+
+
+def _run_all_work(session_id: str, bb: Blackboard, req: JobRequest) -> dict[str, object]:
+    """Run the full pipeline and return the summary the blackboard cannot carry.
+
+    `pipeline.run_all` mutates `bb` in place and has its own per-stage fallbacks,
+    so a failure part-way leaves the session advanced as far as it got. That is
+    the honest outcome and it is observable: the client fetches the session and
+    sees exactly which stages completed. Rolling back to a snapshot would throw
+    away work the run really did.
+    """
+
+    bb.title = req.title
+    result = pipeline.run_all(req.idea, title=req.title, max_ideas=req.max_ideas, bb=bb)
+    result.blackboard.session_id = session_id
+    _sessions[session_id] = result.blackboard
+    return {
+        "steps": [
+            {"agent": s.agent, "runtime": s.runtime, "summary": s.summary} for s in result.steps
+        ],
+        "shippable": result.blackboard.is_shippable(
+            block_on_mechanism=bool(get_settings().mechanism_gate_blocks_ship)
+        ),
+    }
+
 
 @app.post("/api/sessions/{session_id}/jobs", response_model=JobResponse, status_code=202)
 def submit_job(session_id: str, req: JobRequest) -> JobResponse:
@@ -558,14 +587,21 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
     """
 
     bb = _get(session_id)
-    work = _JOB_STEPS.get(req.step)
-    if work is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"unknown step {req.step!r}; expected one of {sorted(_JOB_STEPS)}",
-        )
+    if req.step == RUN_ALL:
+        task: Callable[[], object] = lambda: _run_all_work(session_id, bb, req)  # noqa: E731
+    else:
+        step = _JOB_STEPS.get(req.step)
+        if step is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"unknown step {req.step!r}; expected one of "
+                    f"{sorted([*_JOB_STEPS, RUN_ALL])}"
+                ),
+            )
+        task = lambda: step(bb)  # noqa: E731
     try:
-        job = _jobs.submit(session_id, req.step, lambda: work(bb))
+        job = _jobs.submit(session_id, req.step, task)
     except SessionBusy as busy:
         # 409, not 429: this is not rate limiting, it is a statement that the
         # session is in a state where a second step cannot start. The caller
@@ -587,7 +623,9 @@ def get_job(job_id: str) -> JobResponse:
         step=job.step,
         state=job.state,
         error=job.error,
-        # The blackboard is not inlined here. It is large, a poller would fetch
-        # it repeatedly for no reason, and it is already available at
-        # /api/sessions/{id} -- which the client should call once, on success.
+        # `result` is a small summary and only run-all sets one. The blackboard
+        # is never inlined: it is large, a poller would fetch it repeatedly for
+        # no reason, and it is already at /api/sessions/{id}, which the client
+        # should call once, on success.
+        result=job.result,
     )

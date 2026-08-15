@@ -169,8 +169,18 @@ sees only short requests. `runStep()` in `frontend/lib/api.ts` is the client
 half; it polls every 2 seconds and reports each state change, because a step
 that takes four minutes with no feedback is indistinguishable from a hang.
 
-Steps available as jobs: `brainstorm`, `ideate`, `outline`, `research`, `draft`,
-`voice`, `verify`, `format`, `novelty`, `mechanism`.
+Steps available as jobs: `run-all`, `brainstorm`, `ideate`, `outline`,
+`research`, `draft`, `voice`, `verify`, `format`, `novelty`, `mechanism`.
+
+`run-all` is the only one that takes arguments (`idea`, `title`, `max_ideas`),
+and the only one whose result is not simply the blackboard — the per-agent step
+log and the shippable verdict exist nowhere else, so the job carries them in a
+small `result` object. Its client half is `runAll()`. Note what a partial
+failure leaves behind: `pipeline.run_all` mutates the session in place and has
+per-stage fallbacks, so a run that dies part-way leaves the session advanced as
+far as it got. That is observable — fetch the session and see which stages
+completed — and it is preferable to rolling back to a snapshot, which would
+discard work the run really did.
 
 **Two properties worth knowing before relying on this.** Jobs live in the
 backend process's memory and die with it, exactly like the sessions they mutate
@@ -180,10 +190,9 @@ in place, so a second submission gets a 409 rather than being queued, which
 would hide from the caller that their step had not started.
 
 **Still synchronous, and therefore still unusable through the proxy:**
-`/run-all` (the entire pipeline in one call), `/multi-chat`, `/dialectic` and
-`/revise/socratic`. They remain correct for a loopback client. `/run-all` in
-particular is the one worth converting next, since it is the slowest route in
-the app.
+`/multi-chat`, `/dialectic` and `/revise/socratic`. All three are interactive —
+a person waiting on a reply — so a job with polling buys less than it does for a
+five-minute draft, and they remain correct for a loopback client.
 
 ### Reachability
 

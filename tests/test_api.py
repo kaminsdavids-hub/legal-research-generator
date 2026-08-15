@@ -683,3 +683,74 @@ def test_an_unknown_step_names_the_permitted_set(client: TestClient) -> None:
 
 def test_polling_an_unknown_job_is_404(client: TestClient) -> None:
     assert client.get("/api/jobs/nope").status_code == 404
+
+
+def test_run_all_as_a_job_carries_what_the_blackboard_cannot(client: TestClient) -> None:
+    """run-all produces a per-agent step log and a shippable verdict, neither of
+    which is in the blackboard. As a synchronous route those came back in the
+    response; as a job they would be lost unless the job carries them."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "async run"}).json()
+    submitted = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "run-all", "idea": "open weights and the EAR", "title": "async run"},
+    )
+
+    assert submitted.status_code == 202
+    job_id = submitted.json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300), "run-all did not finish"
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+    assert body["state"] == "succeeded", body["error"]
+    assert body["result"]["steps"], "the per-agent log is the point of the summary"
+    assert isinstance(body["result"]["shippable"], bool)
+    # Still not the blackboard: a poller would re-download it every 2s.
+    assert "blackboard" not in body["result"]
+
+
+def test_the_run_all_job_advances_the_stored_session(client: TestClient) -> None:
+    """The result the client fetches once, on success. The job mutates the same
+    session the client already knows about, so there is nothing to reconcile."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "async run"}).json()
+    assert session["outline"] == []
+
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "run-all", "idea": "open weights and the EAR", "title": "async run"},
+    ).json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300)
+
+    after = client.get(f"/api/sessions/{session['session_id']}").json()
+    assert after["session_id"] == session["session_id"]
+    assert after["outline"], "the run should have advanced the session"
+
+
+def test_a_plain_step_sets_no_result(client: TestClient) -> None:
+    """Only steps producing something outside the blackboard set one. For
+    everything else the result *is* the blackboard, and a duplicate would
+    invite the client to read a stale copy."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "async"}).json()
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs", json={"step": "ideate"}
+    ).json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=120)
+
+    assert client.get(f"/api/jobs/{job_id}").json()["result"] is None
+
+
+def test_run_all_is_named_among_the_permitted_steps(client: TestClient) -> None:
+    session = client.post("/api/sessions", json={"title": "async"}).json()
+
+    detail = client.post(
+        f"/api/sessions/{session['session_id']}/jobs", json={"step": "nope"}
+    ).json()["detail"]
+
+    assert "run-all" in detail
