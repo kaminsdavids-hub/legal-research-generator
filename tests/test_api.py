@@ -1140,3 +1140,68 @@ def test_work_is_always_called_with_its_job() -> None:
     assert job.wait(timeout=10)
 
     assert received == [job]
+
+
+def test_the_dialectic_reports_each_stage(client: TestClient) -> None:
+    """Unlike the multi-chat panel this pipeline is sequential and its stages are
+    heterogeneous — a model call, a network round-trip to CourtListener, an NLI
+    pass — so a spinner cannot distinguish a slow debate from a hung one."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "dialectic"}).json()
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "dialectic", "message": "does the EAR reach open weights?"},
+    ).json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300)
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+    assert body["state"] == "succeeded", body["error"]
+    kinds = [e["event"] for e in body["events"]]
+
+    # The pipeline's real order: both sides generated, then retrieval,
+    # verification, cruxes, synthesis.
+    assert kinds.index("position_generated") < kinds.index("retrieved")
+    assert kinds.index("retrieved") < kinds.index("verified")
+    assert kinds.index("verified") < kinds.index("cruxes_extracted")
+    assert kinds.index("cruxes_extracted") < kinds.index("synthesising")
+
+    sides = [e["side"] for e in body["events"] if e["event"] == "position_generated"]
+    assert sides == ["thesis", "antithesis"]
+
+
+def test_an_empty_crux_table_is_still_reported(client: TestClient) -> None:
+    """Zero cruxes is a real outcome, not a failure. Reporting nothing would let
+    a reader assume the stage had not run."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "dialectic"}).json()
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "dialectic", "message": "does the EAR reach open weights?"},
+    ).json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300)
+
+    events = client.get(f"/api/jobs/{job_id}").json()["events"]
+    (cruxes,) = [e for e in events if e["event"] == "cruxes_extracted"]
+
+    assert isinstance(cruxes["count"], int)
+    # When it is zero the engine's own note says why, and it travels with it.
+    if cruxes["count"] == 0:
+        assert cruxes["note"]
+
+
+def test_a_hostile_subscriber_cannot_break_a_dialectic_turn() -> None:
+    """Same discipline as the panel: reporting on the work must not be able to
+    destroy the work."""
+
+    from legal_research.api.app import _get_dialectic
+
+    def hostile(_event: dict) -> None:
+        raise RuntimeError("subscriber exploded")
+
+    turn = _get_dialectic().chat("does the EAR reach open weights?", on_event=hostile)
+
+    assert turn.question

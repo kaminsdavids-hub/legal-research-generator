@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -647,7 +649,11 @@ class DialecticChat:
                 annotated.append(slot)
         return position.model_copy(update={"propositions": annotated})
 
-    def chat(self, question: str) -> DialecticTurn:
+    def chat(
+        self,
+        question: str,
+        on_event: Callable[[dict[str, object]], None] | None = None,
+    ) -> DialecticTurn:
         """Run one full dialectic turn.
 
         The pipeline is::
@@ -661,33 +667,76 @@ class DialecticChat:
         Synthesis runs last because its prompt asks the model to name the
         decisive crux, and verification runs before extraction because
         ``PrecedenceRule.rank`` reads ``status``.
+
+        ``on_event`` receives each stage as it completes. Unlike the multi-chat
+        panel, this pipeline is strictly sequential and its stages are
+        heterogeneous -- generation is a model call, verification is a network
+        round-trip to CourtListener, crux extraction is an NLI pass -- so a
+        caller shown only a spinner cannot tell a slow debate from a hung one.
+        Wrapped, so a subscriber that raises cannot break the turn.
         """
+
+        def report(kind: str, **fields: object) -> None:
+            if on_event is None:
+                return
+            with contextlib.suppress(Exception):
+                on_event({"event": kind, **fields})
+
         ledger = BudgetLedger()
+        report("generating", side="thesis")
         thesis, thesis_retries = self._generate_position(
             "thesis", question, self.thesis_client
         )
+        report(
+            "position_generated",
+            side="thesis",
+            propositions=len(thesis.propositions),
+            retries=thesis_retries,
+        )
+
         # The antithesis sees the thesis and must contradict it directly. Both
         # sides generated blind from the same question frequently argued the
         # same position, and a dialectic whose sides agree has no cruxes.
+        report("generating", side="antithesis")
         antithesis, antithesis_retries = self._generate_position(
             "antithesis", question, self.antithesis_client, opposing=thesis
+        )
+        report(
+            "position_generated",
+            side="antithesis",
+            propositions=len(antithesis.propositions),
+            retries=antithesis_retries,
         )
 
         # Retrieval sits between generation and verification: it is the only
         # thing that turns a plain-English `court_hint` into a candidate cite.
         # Without it `verify_position` finds no filled slots and returns early,
         # so the network is never touched and every slot stays pending forever.
+        report("retrieving")
         thesis = self._retrieve_position(thesis)
         antithesis = self._retrieve_position(antithesis)
+        report(
+            "retrieved",
+            filled=sum(
+                1
+                for position in (thesis, antithesis)
+                for slot in position.propositions
+                if slot.normalized_cite
+            ),
+        )
 
         # Annotate last: verification rewrites `note`, so a status attached any
         # earlier is overwritten before the synthesis can act on it.
+        report("verifying")
         thesis = self._annotate_position(
             self._note_unretrieved(self._verify_position(thesis, ledger))
         )
         antithesis = self._annotate_position(
             self._note_unretrieved(self._verify_position(antithesis, ledger))
         )
+        # The slowest stage, and the one that reaches the network. Reporting the
+        # budget spent is what tells a reader whether it did any work at all.
+        report("verified", calls_spent=ledger.calls_spent)
 
         turn = DialecticTurn(
             question=question,
@@ -703,7 +752,11 @@ class DialecticChat:
         # to the synthesis model.
         turn.cruxes = self.crux_extractor.extract(thesis, antithesis)
         turn.crux_note = self._crux_note(turn)
+        # An empty crux table is a real outcome, not a failure, so the count goes
+        # out either way -- and `note` says why when it is zero.
+        report("cruxes_extracted", count=len(turn.cruxes), note=turn.crux_note)
 
+        report("synthesising")
         turn.synthesis, synthesis_retries = self._generate_synthesis(question, turn)
         turn.synthesis_note = self._pending_synthesis_note
 

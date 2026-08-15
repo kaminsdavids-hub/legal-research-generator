@@ -212,9 +212,15 @@ export interface JobStatus {
 /** One thing that happened during a step. `multi-chat` reports the panel:
  *  `panel_started` with the model list, then `model_answered` per model as each
  *  finishes — in completion order, which is what the person waiting sees — then
- *  `synthesising`. */
+ *  `synthesising`.
+ *
+ *  `dialectic` reports a sequence instead: `generating` and `position_generated`
+ *  per side, then `retrieved`, `verified`, `cruxes_extracted`, `synthesising`.
+ *  Its stages are heterogeneous — a model call, a network round-trip, an NLI
+ *  pass — so the stage name is the useful part, not the timing. */
 export interface JobEvent {
   event: string;
+  /** multi-chat */
   model?: string;
   name?: string;
   seconds?: number;
@@ -222,6 +228,14 @@ export interface JobEvent {
   answered?: boolean;
   models?: string[];
   answers?: number;
+  /** dialectic */
+  side?: "thesis" | "antithesis";
+  propositions?: number;
+  retries?: number;
+  filled?: number;
+  calls_spent?: number;
+  count?: number;
+  note?: string;
 }
 
 export type JobStep =

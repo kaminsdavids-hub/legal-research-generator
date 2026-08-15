@@ -234,6 +234,17 @@ per-model events are worth more and cost far less. The callback is invoked from
 the panel's pool threads and wrapped, so a subscriber that raises cannot break
 the exchange.
 
+`dialectic` reports a sequence rather than a panel: `generating` and
+`position_generated` per side, then `retrieved`, `verified`,
+`cruxes_extracted`, `synthesising`. Its stages are heterogeneous — a model call,
+a network round-trip to CourtListener, an NLI pass — so a spinner cannot
+distinguish a slow debate from a hung one, and the stage name is the useful part
+rather than the timing. `verified` carries `calls_spent`, which is what tells a
+reader whether verification did any work at all; `cruxes_extracted` reports a
+count of zero along with the engine's note explaining why, because an empty crux
+table is a real outcome and reporting nothing would look like a stage that never
+ran.
+
 Progress is carried on the poll as well as the stream, so falling back to
 polling costs the immediacy and not the information.
 

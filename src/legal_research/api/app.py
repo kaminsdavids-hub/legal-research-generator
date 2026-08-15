@@ -659,10 +659,16 @@ def _multi_chat_work(req: JobRequest, job: Job | None = None) -> dict[str, objec
     return _multi_chat_response(result).model_dump()
 
 
-def _dialectic_work(req: JobRequest) -> dict[str, object]:
+def _dialectic_work(req: JobRequest, job: Job | None = None) -> dict[str, object]:
     """One dialectic exchange, in the shape the synchronous route returns."""
 
-    return _dialectic_response(_get_dialectic().chat(req.message.strip())).model_dump()  # type: ignore[attr-defined]
+    turn = _get_dialectic().chat(  # type: ignore[attr-defined]
+        req.message.strip(),
+        # As with multi-chat: only when run as a job. The synchronous route
+        # returns once, at the end, so it has nowhere to put progress.
+        on_event=job.emit if job is not None else None,
+    )
+    return dict(_dialectic_response(turn).model_dump())
 
 
 def _run_all_work(session_id: str, bb: Blackboard, req: JobRequest) -> dict[str, object]:
@@ -711,7 +717,7 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
     elif req.step == "multi-chat":
         task = lambda job: _multi_chat_work(req, job)  # noqa: E731
     elif req.step == "dialectic":
-        task = lambda _job: _dialectic_work(req)  # noqa: E731
+        task = lambda job: _dialectic_work(req, job)  # noqa: E731
     elif req.step == "socratic":
         task = lambda _job: _socratic_work(bb, req)  # noqa: E731
     else:
