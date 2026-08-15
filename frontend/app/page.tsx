@@ -11,6 +11,7 @@ import {
   Quote,
   ScrollText,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { BrainstormPanel } from "@/components/BrainstormPanel";
@@ -20,8 +21,11 @@ import { ManuscriptPanel } from "@/components/ManuscriptPanel";
 import { Button } from "@/components/ui";
 import {
   api,
+  runStep,
   setProxyPassword,
   UnauthorizedError,
+  type JobEvent,
+  type JobStep,
   type AppConfig,
   type Blackboard,
   type IdeaStatus,
@@ -31,15 +35,58 @@ import {
 
 type Tab = "manuscript" | "citations";
 
-const STEPS = [
-  { key: "outline", label: "Outline", icon: ListTree, run: api.outline },
-  { key: "research", label: "Research", icon: BookOpen, run: api.research },
-  { key: "draft", label: "Draft", icon: PenLine, run: api.draft },
-  { key: "voice", label: "Voice", icon: Sparkles, run: api.voice },
-  { key: "verify", label: "Verify", icon: CheckCircle2, run: api.verify },
-  { key: "format", label: "Format", icon: Quote, run: api.format },
-  { key: "novelty", label: "Novelty", icon: FlaskConical, run: api.novelty },
-] as const;
+// Run as jobs, not through the synchronous routes: those hold a request open
+// for the whole step, which nothing in front of this app is willing to wait for.
+const STEPS: readonly { key: JobStep; label: string; icon: LucideIcon }[] = [
+  { key: "outline", label: "Outline", icon: ListTree },
+  { key: "research", label: "Research", icon: BookOpen },
+  { key: "draft", label: "Draft", icon: PenLine },
+  { key: "voice", label: "Voice", icon: Sparkles },
+  { key: "verify", label: "Verify", icon: CheckCircle2 },
+  { key: "format", label: "Format", icon: Quote },
+  { key: "novelty", label: "Novelty", icon: FlaskConical },
+];
+
+/** One line of progress, in the words of whatever produced it.
+ *
+ * Deliberately not a percentage. Only run-all knows how many stages it has, and
+ * a bar that guessed at the others would be inventing a denominator — the panel
+ * finishes in whatever order the models finish, and the dialectic's stages take
+ * wildly different times. What a person waiting actually wants is evidence that
+ * something moved, and which thing it was. */
+function describeEvent(e: JobEvent): string {
+  switch (e.event) {
+    // multi-chat
+    case "panel_started":
+      return `asking ${e.models?.length ?? 0} models`;
+    case "model_answered":
+      return e.answered
+        ? `${e.model} answered · ${e.seconds}s · ${e.characters} chars`
+        : `${e.model} returned nothing (timed out or failed)`;
+    case "synthesising":
+      return e.answers === undefined ? "synthesising" : `synthesising ${e.answers} answers`;
+    // dialectic
+    case "generating":
+      return `generating ${e.side}`;
+    case "position_generated":
+      return `${e.side}: ${e.propositions} propositions${e.retries ? ` (${e.retries} retries)` : ""}`;
+    case "retrieving":
+      return "retrieving authority";
+    case "retrieved":
+      return `retrieved ${e.filled} citations`;
+    case "verifying":
+      return "verifying against CourtListener";
+    case "verified":
+      return `verified · ${e.calls_spent} calls`;
+    case "cruxes_extracted":
+      return e.count ? `${e.count} cruxes` : e.note || "no cruxes";
+    // run-all
+    case "step_completed":
+      return `${e.index}. ${e.agent}${e.degraded ? " — fell back" : ""}`;
+    default:
+      return e.event;
+  }
+}
 
 export default function Home() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -47,6 +94,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("manuscript");
   const [report, setReport] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<JobEvent[]>([]);
   const [title, setTitle] = useState("Untitled Research Paper");
   const [needsKey, setNeedsKey] = useState(false);
   const [keyInput, setKeyInput] = useState("");
@@ -114,13 +162,23 @@ export default function Home() {
     }
   }
 
-  async function withBusy(key: string, fn: () => Promise<Blackboard>) {
+  async function withBusy(
+    key: string,
+    fn: (onProgress: (event: JobEvent) => void) => Promise<Blackboard>
+  ) {
     setBusy(key);
+    // Cleared when the next step starts, not when this one ends: the record of
+    // what just happened is most useful immediately after it happened.
+    setProgress([]);
     try {
-      const next = await fn();
+      const next = await fn((event) => setProgress((prior) => [...prior, event]));
       setBb(next);
       await refreshReport(next.session_id);
     } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        setNeedsKey(true);
+        return;
+      }
       console.error(e);
       alert(String(e));
     } finally {
@@ -219,9 +277,15 @@ export default function Home() {
           <Button
             variant="ghost"
             onClick={() =>
-              withBusy("run-all", async () => {
-                await api.runAll(bb.session_id, bb.thesis || title, title);
-                return api.getSession(bb.session_id);
+              withBusy("run-all", async (onProgress) => {
+                const { blackboard } = await api.runAll(
+                  bb.session_id,
+                  bb.thesis || title,
+                  title,
+                  undefined,
+                  onProgress
+                );
+                return blackboard;
               })
             }
             disabled={busy !== null}
@@ -257,7 +321,11 @@ export default function Home() {
             key={step.key}
             variant="subtle"
             disabled={busy !== null}
-            onClick={() => withBusy(step.key, () => step.run(bb.session_id))}
+            onClick={() =>
+              withBusy(step.key, (onProgress) =>
+                runStep(bb.session_id, step.key, undefined, 2000, onProgress)
+              )
+            }
           >
             {busy === step.key ? (
               <Loader2 className="animate-spin" size={14} />
@@ -268,6 +336,34 @@ export default function Home() {
           </Button>
         ))}
       </div>
+
+      {/* Only rendered when there is something to say. An empty strip that
+          appears and disappears is noise; the absence of one is information. */}
+      {progress.length > 0 && (
+        <div className="border-b border-slate-200 bg-slate-50 px-5 py-2">
+          <ol className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            {progress.map((event, i) => (
+              <li
+                key={i}
+                className={
+                  event.degraded || event.answered === false
+                    ? "text-amber-600"
+                    : i === progress.length - 1 && busy !== null
+                      ? "font-medium text-slate-700"
+                      : ""
+                }
+              >
+                {describeEvent(event)}
+              </li>
+            ))}
+            {busy !== null && (
+              <li className="flex items-center gap-1 text-slate-400">
+                <Loader2 className="animate-spin" size={11} />
+              </li>
+            )}
+          </ol>
+        </div>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <div className="grid min-h-0 grid-rows-2 gap-4">

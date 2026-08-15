@@ -1269,3 +1269,37 @@ def test_a_hostile_subscriber_cannot_break_a_run() -> None:
     result = pipe.run_all("open weights", title="hostile", bb=pipe.new_session("hostile"), on_event=hostile)
 
     assert result.steps, "the run completed despite the callback"
+
+
+def test_every_step_the_page_offers_is_one_the_backend_accepts() -> None:
+    """The page's buttons and the backend's allow-list are two lists that must
+    agree, in different languages, in different files. A button naming a step
+    the backend rejects fails at the click, which is the worst place to find
+    out."""
+
+    import re
+    from pathlib import Path
+
+    from legal_research.api.app import _JOB_STEPS, QUESTION_STEPS, RUN_ALL
+
+    page = Path("frontend/app/page.tsx").read_text(encoding="utf-8")
+    offered = re.findall(r'key: "([a-z-]+)"', page)
+    accepted = set(_JOB_STEPS) | {RUN_ALL} | QUESTION_STEPS | {"socratic"}
+
+    assert offered, "no steps found in the page; the pattern must have changed"
+    assert set(offered) <= accepted, f"page offers {set(offered) - accepted}"
+
+
+def test_the_client_names_every_step_the_backend_accepts() -> None:
+    """And the other direction: JobStep in the client is the type that stops a
+    typo reaching the network, so it has to list what the backend allows."""
+
+    from pathlib import Path
+
+    from legal_research.api.app import _JOB_STEPS, QUESTION_STEPS, RUN_ALL
+
+    api_ts = Path("frontend/lib/api.ts").read_text(encoding="utf-8")
+    declared = api_ts.split("export type JobStep =")[1].split(";")[0]
+
+    for step in {*_JOB_STEPS, RUN_ALL, *QUESTION_STEPS, "socratic"}:
+        assert f'"{step}"' in declared, f"JobStep omits {step!r}"

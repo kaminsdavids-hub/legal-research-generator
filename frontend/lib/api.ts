@@ -446,7 +446,8 @@ export async function runStep(
   sessionId: string,
   step: JobStep,
   onState?: (state: JobState) => void,
-  intervalMs = 2000
+  intervalMs = 2000,
+  onProgress?: (event: JobEvent) => void
 ): Promise<Blackboard> {
   const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
     method: "POST",
@@ -454,7 +455,7 @@ export async function runStep(
   });
   onState?.(started.state);
 
-  const status = await awaitJob(started.job_id, onState, intervalMs);
+  const status = await awaitJob(started.job_id, onState, intervalMs, onProgress);
   if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
   // Fetched once, on success. The poll deliberately does not carry the
   // blackboard: it is large, and a poller would re-download it every 2s.

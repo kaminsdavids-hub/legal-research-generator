@@ -33,11 +33,11 @@
 # THE TIMEOUT, and how it is handled. Netlify synchronous functions cap at 10s
 # by default and 26s at most, while this backend's budget is
 # LRG_LLM_TIMEOUT_SECONDS=300. A five-minute request cannot be made to fit, so
-# the slow steps stopped being requests: POST /api/sessions/{id}/jobs returns
-# 202 immediately and the client polls GET /api/jobs/{id}. Every call through
-# this proxy is now fast by construction.
+# every route that drives a model stopped being a request: POST
+# /api/sessions/{id}/jobs returns 202 immediately and the client polls GET
+# /api/jobs/{id}. Every call through this proxy is fast by construction.
 #
-# Still synchronous on the backend and therefore still unusable through the
-# proxy: /multi-chat, /dialectic and /revise/socratic. Those are interactive and
-# short by nature, so converting them buys less; they remain correct for a
-# loopback client. See deploy/README.md.
+# The original synchronous routes still exist and are correct for a loopback
+# client, but they must not be called through this proxy -- they hold a request
+# open for the whole step. The frontend uses the job routes exclusively.
+# See deploy/README.md.
