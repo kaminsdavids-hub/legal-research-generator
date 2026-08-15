@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "legal-research-generator"
+version = "0.1.0"
+description = "Local multi-agent studio for grounded, human-voiced legal research papers."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "legal research generator" }]
+
+# Pinned runtime dependencies. Everything here runs locally with no cloud LLMs.
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "pydantic==2.10.4",
+    "pydantic-settings==2.7.1",
+    "httpx==0.28.1",
+    "numpy==2.2.1",
+    "python-dotenv==1.0.1",
+    "jinja2==3.1.5",
+    "websockets==14.1",
+]
+
+[project.optional-dependencies]
+# Real local embedding retrieval (optional; the mock retriever needs none of this).
+gpu = [
+    "faiss-cpu==1.9.0.post1",
+    "sentence-transformers>=5.4.1,<6",
+    "transformers>=5.2.0,<6",
+]
+# HTML -> PDF rendering backends (optional; renderer falls back to HTML if absent).
+pdf = [
+    "weasyprint==63.1",
+]
+# Corpus ingestion of uploaded documents (optional; text/HTML need no extra deps).
+ingest = [
+    "pypdf==5.1.0",
+]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.0",
+    "mypy==1.14.1",
+    "ruff==0.8.6",
+]
+
+[project.scripts]
+lrg-api = "legal_research.api.app:main"
+lrg-demo = "legal_research.demo:main"
+lrg-ingest = "legal_research.ingest.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/legal_research", "modules"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+ignore_missing_imports = true
+files = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

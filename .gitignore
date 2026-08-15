@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Env / secrets
+.env
+.env.local
+*.local
+# Backups carry the same LRG_LLM_API_KEY the live file does; `.env` alone
+# does not cover them, and a rotated-out key in history is still a leak.
+.env.bak
+.env.bak-*
+.env.*.bak
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+frontend/.turbo/
+npm-debug.log*
+yarn-error.log*
+
+# Generated artifacts
+paper/
+*.pdf
+!tests/golden/*.pdf
+data/index/
+*.faiss
+logs/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local Netlify folder
+.netlify
+
+# Search artifacts: reproducible from the stamped recipe, and large.
+*.collisions.json
+*.report.json
+.casework/

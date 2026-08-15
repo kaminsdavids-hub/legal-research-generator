@@ -1,0 +1,30 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "8468192feee8",
+        "type": "thesis",
+        "text": "A smoke-test thesis about export control.",
+        "provenance": "human",
+        "section": "",
+        "citation": "",
+        "verified": false
+      }
+    ],
+    "edges": []
+  },
+  "asked": [],
+  "barren": [],
+  "pending": {
+    "text": "Nothing in the paper pushes back on this: \u201cA smoke-test thesis about export control.\u201d What is the strongest objection someone who disagrees with you would make?",
+    "phrasing": "template",
+    "gap": {
+      "kind": "uncontested_claim",
+      "node_ids": [
+        "8468192feee8"
+      ],
+      "detail": "nothing in the paper puts pressure on this claim",
+      "section": ""
+    }
+  }
+}
