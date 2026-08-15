@@ -1303,3 +1303,23 @@ def test_the_client_names_every_step_the_backend_accepts() -> None:
 
     for step in {*_JOB_STEPS, RUN_ALL, *QUESTION_STEPS, "socratic"}:
         assert f'"{step}"' in declared, f"JobStep omits {step!r}"
+
+
+def test_a_substituted_panel_answer_is_not_reported_as_an_answer() -> None:
+    """Found by running it. Every one of five models timed out, each was replaced
+    with canned text, and the progress strip rendered five successes — because
+    `answered` was `bool(content)` and a substitute is not empty. That is the
+    conflation the run-all recorder avoids, reintroduced one module over."""
+
+    from legal_research.multi_chat import MultiModelChat
+
+    assert MultiModelChat.answered("The EAR reaches published weights because…")
+    for substitute in (
+        "Degraded panel answer (gpt-oss:20b; timeout recovered): For 'x', begin with…",
+        "Degraded panel answer (gemma4:latest; low-substance rewrite fallback): …",
+        "(skipped: model jury time budget exceeded)",
+        "(no response)",
+        "(unavailable: ReadTimeout)",
+        "   ",
+    ):
+        assert not MultiModelChat.answered(substitute), substitute

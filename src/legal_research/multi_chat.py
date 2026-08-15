@@ -326,6 +326,25 @@ class MultiModelChat:
         return type(exc).__name__.lower() in {"readtimeout", "timeoutexception", "timeout"}
 
     @staticmethod
+    def answered(content: str) -> bool:
+        """Whether a panel slot holds a real model answer.
+
+        Every substitute this module produces announces itself, and this is the
+        one place that knows the whole list. It exists because the progress
+        events reported `answered=True` for any non-empty string, which made a
+        panel where all five models timed out and were replaced with canned text
+        render as five successes -- the exact conflation the run-all recorder
+        was careful to avoid, reintroduced one module over.
+        """
+
+        stripped = content.strip()
+        if not stripped:
+            return False
+        return not stripped.startswith(
+            ("Degraded panel answer (", "(skipped:", "(no response)", "(unavailable:")
+        )
+
+    @staticmethod
     def _timeout_model_fallback(prompt: str, model: str) -> str:
         topic = MultiModelChat._shorten_prompt(prompt, max_chars=180)
         return (
@@ -829,9 +848,9 @@ class MultiModelChat:
                 model=model,
                 seconds=round(time.monotonic() - began, 1),
                 characters=len(content),
-                # A model that timed out or errored returns empty; saying so is
-                # more useful than reporting it as an answer of length zero.
-                answered=bool(content.strip()),
+                # Not `bool(content)`: a model that timed out comes back with a
+                # canned substitute, which is non-empty and is not an answer.
+                answered=self.answered(content),
             )
             return ModelAnswer(model=model, content=content)
 
