@@ -150,16 +150,27 @@ def session_multi_chat(session_id: str, req: MultiChatRequest) -> MultiChatRespo
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"multi-chat unavailable: {exc}") from exc
 
-    grounding = result.grounding
+    return _multi_chat_response(result)
+
+
+def _multi_chat_response(result: object) -> MultiChatResponse:
+    """Build the wire response from an engine result.
+
+    Extracted so the synchronous route and the job produce the same object. Two
+    hand-built copies of a twenty-field response would drift, and the drift
+    would show up as a client that works on one path and not the other.
+    """
+
+    grounding = result.grounding  # type: ignore[attr-defined]
     return MultiChatResponse(
-        final_answer=result.final_answer,
+        final_answer=result.final_answer,  # type: ignore[attr-defined]
         model_answers=[
             {"model": answer.model, "content": answer.content}
-            for answer in result.model_answers
+            for answer in result.model_answers  # type: ignore[attr-defined]
         ],
         verifiers=[
             {"model": verdict.model, "verdict": verdict.verdict}
-            for verdict in result.verifiers
+            for verdict in result.verifiers  # type: ignore[attr-defined]
         ],
         grounding={
             "available": grounding.available,
@@ -193,13 +204,23 @@ def session_dialectic(session_id: str, req: DialecticRequest) -> DialecticRespon
     if not question:
         raise HTTPException(status_code=400, detail="message must not be empty")
 
-    from modules.dialectic.copy import copy_crux_table, copy_exchange, copy_position
-
     chat = _get_dialectic()
     try:
         turn = chat.chat(question)  # type: ignore[attr-defined]
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"dialectic unavailable: {exc}") from exc
+
+    return _dialectic_response(turn)
+
+
+def _dialectic_response(turn: object) -> DialecticResponse:
+    """Build the wire response from a dialectic turn.
+
+    Extracted for the same reason as the multi-chat builder: one construction,
+    so the synchronous route and the job cannot drift apart.
+    """
+
+    from modules.dialectic.copy import copy_crux_table, copy_exchange, copy_position
 
     def slot(s: object) -> dict[str, object]:
         return {
@@ -221,10 +242,10 @@ def session_dialectic(session_id: str, req: DialecticRequest) -> DialecticRespon
         }
 
     return DialecticResponse(
-        question=turn.question,
-        thesis=position(turn.thesis),  # type: ignore[arg-type]
-        antithesis=position(turn.antithesis),  # type: ignore[arg-type]
-        synthesis=turn.synthesis,
+        question=turn.question,  # type: ignore[attr-defined]
+        thesis=position(turn.thesis),  # type: ignore[arg-type, attr-defined]
+        antithesis=position(turn.antithesis),  # type: ignore[arg-type, attr-defined]
+        synthesis=turn.synthesis,  # type: ignore[attr-defined]
         cruxes=[
             {
                 "thesis_prop": slot(c.thesis_prop),
@@ -235,7 +256,7 @@ def session_dialectic(session_id: str, req: DialecticRequest) -> DialecticRespon
                 "outcome_bearing": c.outcome_bearing,
                 "nli_source": c.nli_source,
             }
-            for c in turn.cruxes
+            for c in turn.cruxes  # type: ignore[attr-defined]
         ],  # type: ignore[arg-type]
         calls_spent=turn.calls_spent,
         regenerated=turn.regenerated,
@@ -548,10 +569,42 @@ _JOB_STEPS: dict[str, Callable[[Blackboard], object]] = {
     "mechanism": pipeline.mechanism_gate,
 }
 
+#: Steps that answer a question without touching the blackboard. They are exempt
+#: from the one-writer-per-session rule: a user can already hold two
+#: conversations at once, and putting them under the writers' lock would remove
+#: that to prevent a corruption they cannot cause.
+READ_ONLY_STEPS = frozenset({"multi-chat", "dialectic"})
+
 #: The whole pipeline in one job. Kept out of `_JOB_STEPS` because it is the one
 #: step that takes arguments and the one that produces something the blackboard
 #: does not hold -- the per-agent step log and the shippable verdict.
 RUN_ALL = "run-all"
+
+
+def _multi_chat_work(req: JobRequest) -> dict[str, object]:
+    """One multi-model exchange, in the shape the synchronous route returns.
+
+    `.model_dump()` rather than a hand-built dict: the response model is the
+    contract, and re-describing it here would let the two drift apart silently.
+    """
+
+    result = multi_chat.chat(
+        req.message,
+        history=[
+            MultiChatEngineTurn(
+                role="assistant" if turn.role.lower() == "assistant" else "user",
+                content=turn.content,
+            )
+            for turn in req.history
+        ],
+    )
+    return _multi_chat_response(result).model_dump()
+
+
+def _dialectic_work(req: JobRequest) -> dict[str, object]:
+    """One dialectic exchange, in the shape the synchronous route returns."""
+
+    return _dialectic_response(_get_dialectic().chat(req.message.strip())).model_dump()  # type: ignore[attr-defined]
 
 
 def _run_all_work(session_id: str, bb: Blackboard, req: JobRequest) -> dict[str, object]:
@@ -587,8 +640,15 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
     """
 
     bb = _get(session_id)
+    if req.step in READ_ONLY_STEPS and not req.message.strip():
+        raise HTTPException(status_code=400, detail="message must not be empty")
+
     if req.step == RUN_ALL:
         task: Callable[[], object] = lambda: _run_all_work(session_id, bb, req)  # noqa: E731
+    elif req.step == "multi-chat":
+        task = lambda: _multi_chat_work(req)  # noqa: E731
+    elif req.step == "dialectic":
+        task = lambda: _dialectic_work(req)  # noqa: E731
     else:
         step = _JOB_STEPS.get(req.step)
         if step is None:
@@ -596,12 +656,14 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
                 status_code=400,
                 detail=(
                     f"unknown step {req.step!r}; expected one of "
-                    f"{sorted([*_JOB_STEPS, RUN_ALL])}"
+                    f"{sorted([*_JOB_STEPS, RUN_ALL, *READ_ONLY_STEPS])}"
                 ),
             )
         task = lambda: step(bb)  # noqa: E731
     try:
-        job = _jobs.submit(session_id, req.step, task)
+        job = _jobs.submit(
+            session_id, req.step, task, mutates=req.step not in READ_ONLY_STEPS
+        )
     except SessionBusy as busy:
         # 409, not 429: this is not rate limiting, it is a statement that the
         # session is in a state where a second step cannot start. The caller

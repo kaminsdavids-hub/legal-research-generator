@@ -208,6 +208,8 @@ export interface JobStatus {
 
 export type JobStep =
   | "run-all"
+  | "multi-chat"
+  | "dialectic"
   | "brainstorm"
   | "ideate"
   | "outline"
@@ -253,6 +255,35 @@ export async function runAll(
     blackboard: await jsonFetch<Blackboard>(`/api/sessions/${sessionId}`),
     summary: (status.result as unknown as RunAllSummary) ?? { steps: [], shippable: false },
   };
+}
+
+/** Ask a question as a job, and get the answer back whole.
+ *
+ *  Unlike the pipeline steps, these never touch the blackboard — the entire
+ *  response is the job's result, so there is nothing to fetch afterwards. They
+ *  are also not exclusive: several can be in flight at once, including while a
+ *  draft is running. */
+export async function askAsJob<T>(
+  sessionId: string,
+  step: "multi-chat" | "dialectic",
+  message: string,
+  history: SocraticTurn[] = [],
+  onState?: (state: JobState) => void
+): Promise<T> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ step, message, history }),
+  });
+  onState?.(started.state);
+
+  let status = started;
+  while (status.state === "running") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
+    onState?.(status.state);
+  }
+  if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
+  return status.result as unknown as T;
 }
 
 /** Submit a step and resolve when it finishes, or reject with what went wrong.

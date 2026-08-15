@@ -255,12 +255,19 @@ class JobRequest(BaseModel):
     #: the route, not against this type, so an unknown value gets a 400 naming
     #: the permitted set rather than a 422 with a schema dump.
     step: str
-    #: Only for step="run-all", which unlike every other step takes arguments.
-    #: Carried here rather than on a second submission route so that a client
-    #: and any proxy in front of it have one shape to learn.
+    #: Arguments for the steps that take them. Carried here rather than on a
+    #: route per step so that a client, and any proxy in front of it, have one
+    #: submission shape to learn. Each field names the step that reads it;
+    #: everything else ignores them.
+    #:
+    #: run-all:
     idea: str = ""
     title: str = "Untitled Research Paper"
     max_ideas: int = 3
+    #: multi-chat and dialectic:
+    message: str = ""
+    #: multi-chat only:
+    history: list[MultiChatTurn] = Field(default_factory=list)
 
 
 class JobResponse(BaseModel):

@@ -754,3 +754,81 @@ def test_run_all_is_named_among_the_permitted_steps(client: TestClient) -> None:
     ).json()["detail"]
 
     assert "run-all" in detail
+
+
+def test_multi_chat_and_dialectic_run_as_jobs(client: TestClient) -> None:
+    """Both answer a question rather than advancing the manuscript, so the whole
+    response is the job's result — there is no blackboard to fetch afterwards."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "chat"}).json()
+    sid = session["session_id"]
+
+    for step, marker in (("multi-chat", "final_answer"), ("dialectic", "cruxes")):
+        submitted = client.post(
+            f"/api/sessions/{sid}/jobs", json={"step": step, "message": "does the EAR reach weights?"}
+        )
+        assert submitted.status_code == 202, step
+        job_id = submitted.json()["job_id"]
+        assert _jobs.get(job_id).wait(timeout=300), f"{step} did not finish"
+
+        body = client.get(f"/api/jobs/{job_id}").json()
+        assert body["state"] == "succeeded", f"{step}: {body['error']}"
+        assert marker in (body["result"] or {}), f"{step} lost its response shape"
+
+
+def test_two_conversations_can_run_at_once(client: TestClient) -> None:
+    """The correction this conversion forced. Multi-chat and dialectic never
+    touch the blackboard, so putting them under the writers' lock would take
+    away something a user can already do — hold two conversations — to prevent a
+    corruption they cannot cause."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+
+    release = threading.Event()
+    first = _jobs.submit("chatty", "multi-chat", release.wait, mutates=False)
+    try:
+        second = _jobs.submit("chatty", "dialectic", lambda: None, mutates=False)
+        assert second.wait(timeout=10), "the second conversation was blocked by the first"
+        # And a read-only job in flight does not block a writer either.
+        writer = _jobs.submit("chatty", "draft", lambda: None)
+        assert writer.wait(timeout=10)
+    finally:
+        release.set()
+        first.wait(timeout=10)
+
+
+def test_a_writing_step_is_still_exclusive(client: TestClient) -> None:
+    """The exemption is narrow: steps that mutate the blackboard keep the lock."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+    from legal_research.api.jobs import SessionBusy
+
+    release = threading.Event()
+    held = _jobs.submit("writer-session", "draft", release.wait)
+    try:
+        with pytest.raises(SessionBusy):
+            _jobs.submit("writer-session", "verify", lambda: None)
+    finally:
+        release.set()
+        held.wait(timeout=10)
+
+
+def test_an_empty_message_is_refused_before_a_job_starts(client: TestClient) -> None:
+    """The synchronous route rejects an empty question with a 400. Submitting a
+    job that is certain to fail would turn that into a poll and a failure state,
+    which is a worse way to learn the same thing."""
+
+    session = client.post("/api/sessions", json={"title": "chat"}).json()
+
+    resp = client.post(
+        f"/api/sessions/{session['session_id']}/jobs", json={"step": "dialectic", "message": "  "}
+    )
+
+    assert resp.status_code == 400
+    assert "must not be empty" in resp.json()["detail"]

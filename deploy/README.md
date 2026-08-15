@@ -170,7 +170,16 @@ half; it polls every 2 seconds and reports each state change, because a step
 that takes four minutes with no feedback is indistinguishable from a hang.
 
 Steps available as jobs: `run-all`, `brainstorm`, `ideate`, `outline`,
-`research`, `draft`, `voice`, `verify`, `format`, `novelty`, `mechanism`.
+`research`, `draft`, `voice`, `verify`, `format`, `novelty`, `mechanism`,
+`multi-chat`, `dialectic`.
+
+The last two are different in kind and the difference is load-bearing. They
+answer a question without touching the blackboard, so the whole response comes
+back as the job's `result` and there is nothing to fetch afterwards — and they
+are **not exclusive**. Several can run at once, including while a draft is in
+flight. Putting them under the one-writer-per-session rule would have removed
+something a user can already do, hold two conversations, in order to prevent a
+corruption they cannot cause.
 
 `run-all` is the only one that takes arguments (`idea`, `title`, `max_ideas`),
 and the only one whose result is not simply the blackboard — the per-agent step
@@ -189,10 +198,16 @@ And only one step runs per session at a time: steps mutate a shared blackboard
 in place, so a second submission gets a 409 rather than being queued, which
 would hide from the caller that their step had not started.
 
-**Still synchronous, and therefore still unusable through the proxy:**
-`/multi-chat`, `/dialectic` and `/revise/socratic`. All three are interactive —
-a person waiting on a reply — so a job with polling buys less than it does for a
-five-minute draft, and they remain correct for a loopback client.
+**Still synchronous:** `/revise/socratic`, and the original routes for
+everything above, which are unchanged and correct for a loopback client.
+
+A note on what polling costs the interactive steps. `multi-chat` and `dialectic`
+have a person waiting on a reply, and a 2-second poll adds up to 2 seconds of
+dead time to an answer that may take twenty. That is a real regression in feel,
+paid to get them under a 26-second ceiling. If they matter more than the proxy
+does, the synchronous routes are still there; if the proxy matters more, the
+better end state is streaming rather than polling, so partial output appears as
+it is produced.
 
 ### Reachability
 

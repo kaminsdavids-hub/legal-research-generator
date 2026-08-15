@@ -17,12 +17,18 @@ lazy: the blackboard a job mutates is itself in-process, so persisting the job
 without persisting the session would buy nothing. A restart loses both, and
 :meth:`JobStore.submit` says so rather than implying a durability it lacks.
 
-**One job per session at a time.** Steps mutate a shared blackboard in place, so
-two running against one session would interleave writes and corrupt it. A second
-submission is refused rather than queued: queueing would hide from the caller
-that their step has not started, and the pipeline's steps are ordered anyway --
-research before draft, draft before verify -- so a queue would mostly be a way
-to run them in the wrong order.
+**One *writing* job per session at a time.** Pipeline steps mutate a shared
+blackboard in place, so two running against one session would interleave writes
+and corrupt it. A second submission is refused rather than queued: queueing would
+hide from the caller that their step has not started, and the pipeline's steps
+are ordered anyway -- research before draft, draft before verify -- so a queue
+would mostly be a way to run them in the wrong order.
+
+Read-only work is exempt, and the distinction is not a nicety. Multi-chat and
+dialectic answer a question without touching the blackboard; today a user can
+have two conversations going at once, and putting them under the writers' lock
+would take that away to prevent a corruption they cannot cause. A mutual
+exclusion that guards nothing is just a queue nobody asked for.
 """
 
 from __future__ import annotations
@@ -96,7 +102,14 @@ class JobStore:
         self._by_session: dict[str, str] = {}
         self._lock = threading.Lock()
 
-    def submit(self, session_id: str, step: str, work: Callable[[], Any]) -> Job:
+    def submit(
+        self,
+        session_id: str,
+        step: str,
+        work: Callable[[], Any],
+        *,
+        mutates: bool = True,
+    ) -> Job:
         """Start ``work`` on a thread and return its job immediately.
 
         Whatever ``work`` returns, if it is a ``dict``, becomes the job's
@@ -104,18 +117,22 @@ class JobStore:
         agent objects that mean nothing to a client, and serialising them would
         put internals on the wire by accident.
 
-        Raises :class:`SessionBusy` if a step is already running for this
-        session.
+        ``mutates=False`` marks work that only reads the session. It neither
+        takes the per-session slot nor is blocked by it, so several can run at
+        once and a long draft does not stop the user asking a question. Raises
+        :class:`SessionBusy` only for mutating work.
         """
 
         with self._lock:
-            active = self._by_session.get(session_id)
-            if active is not None and not self._jobs[active].done:
-                raise SessionBusy(active)
+            if mutates:
+                active = self._by_session.get(session_id)
+                if active is not None and not self._jobs[active].done:
+                    raise SessionBusy(active)
 
             job = Job(id=uuid.uuid4().hex[:12], session_id=session_id, step=step)
             self._jobs[job.id] = job
-            self._by_session[session_id] = job.id
+            if mutates:
+                self._by_session[session_id] = job.id
 
         thread = threading.Thread(
             target=self._run, args=(job, work), name=f"job-{step}-{job.id}", daemon=True
