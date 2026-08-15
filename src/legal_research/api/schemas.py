@@ -266,8 +266,14 @@ class JobRequest(BaseModel):
     max_ideas: int = 3
     #: multi-chat and dialectic:
     message: str = ""
-    #: multi-chat only:
+    #: multi-chat and socratic:
     history: list[MultiChatTurn] = Field(default_factory=list)
+    #: socratic only. `apply_revision` is the field that decides whether this
+    #: step writes, which is why exclusivity cannot be settled by step name.
+    section_id: str = ""
+    paragraph_index: int = 0
+    apply_revision: bool = False
+    mode: SocraticMode = "strengthen_doctrine"
 
 
 class JobResponse(BaseModel):

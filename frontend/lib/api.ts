@@ -210,6 +210,7 @@ export type JobStep =
   | "run-all"
   | "multi-chat"
   | "dialectic"
+  | "socratic"
   | "brainstorm"
   | "ideate"
   | "outline"
@@ -284,6 +285,43 @@ export async function askAsJob<T>(
   }
   if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
   return status.result as unknown as T;
+}
+
+/** One Socratic exchange about a paragraph, as a job.
+ *
+ *  `applyRevision` is not just an option: it decides whether this call writes.
+ *  A question can run beside a draft; an applied revision cannot, and the
+ *  backend will answer 409 if one is already in flight. */
+export async function socraticAsJob(
+  sessionId: string,
+  sectionId: string,
+  paragraphIndex: number,
+  message: string,
+  history: SocraticTurn[] = [],
+  applyRevision = false,
+  onState?: (state: JobState) => void
+): Promise<SocraticReviseResponse> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({
+      step: "socratic",
+      section_id: sectionId,
+      paragraph_index: paragraphIndex,
+      message,
+      history,
+      apply_revision: applyRevision,
+    }),
+  });
+  onState?.(started.state);
+
+  let status = started;
+  while (status.state === "running") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
+    onState?.(status.state);
+  }
+  if (status.state === "failed") throw new Error(`socratic failed: ${status.error}`);
+  return status.result as unknown as SocraticReviseResponse;
 }
 
 /** Submit a step and resolve when it finishes, or reject with what went wrong.

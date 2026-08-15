@@ -569,16 +569,56 @@ _JOB_STEPS: dict[str, Callable[[Blackboard], object]] = {
     "mechanism": pipeline.mechanism_gate,
 }
 
-#: Steps that answer a question without touching the blackboard. They are exempt
-#: from the one-writer-per-session rule: a user can already hold two
+#: Steps that answer a question rather than advancing the manuscript. They are
+#: exempt from the one-writer-per-session rule: a user can already hold two
 #: conversations at once, and putting them under the writers' lock would remove
 #: that to prevent a corruption they cannot cause.
-READ_ONLY_STEPS = frozenset({"multi-chat", "dialectic"})
+#:
+#: `socratic` is not in this set even though it usually belongs there, because
+#: whether it writes is decided by the request and not by the step -- see
+#: :func:`_mutates`.
+QUESTION_STEPS = frozenset({"multi-chat", "dialectic"})
+
+#: Every step that needs a message to act on.
+NEEDS_MESSAGE = QUESTION_STEPS | {"socratic"}
+
+
+def _mutates(req: JobRequest) -> bool:
+    """Whether this submission will write to the blackboard.
+
+    A property of the request, not of the step. `socratic` answers a question
+    about a paragraph and, if `apply_revision` is set, rewrites it -- so the
+    same step name is read-only on one call and exclusive on the next. Deciding
+    exclusivity from the name alone would either lock out concurrent questions
+    that harm nothing, or let a revision land while a draft is rewriting the
+    same section.
+    """
+
+    if req.step in QUESTION_STEPS:
+        return False
+    if req.step == "socratic":
+        return req.apply_revision
+    return True
 
 #: The whole pipeline in one job. Kept out of `_JOB_STEPS` because it is the one
 #: step that takes arguments and the one that produces something the blackboard
 #: does not hold -- the per-agent step log and the shippable verdict.
 RUN_ALL = "run-all"
+
+
+def _socratic_work(bb: Blackboard, req: JobRequest) -> dict[str, object]:
+    """One Socratic exchange about a paragraph, optionally applying the result."""
+
+    result = pipeline.socratic_revise_paragraph(
+        bb,
+        section_id=req.section_id,
+        paragraph_index=req.paragraph_index,
+        message=req.message,
+        history=[t.model_dump() for t in req.history],
+        apply_revision=req.apply_revision,
+        mode=req.mode,
+    )
+    return dict(SocraticReviseResponse(**result.payload).model_dump())
 
 
 def _multi_chat_work(req: JobRequest) -> dict[str, object]:
@@ -640,8 +680,13 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
     """
 
     bb = _get(session_id)
-    if req.step in READ_ONLY_STEPS and not req.message.strip():
+    if req.step in NEEDS_MESSAGE and not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
+    if req.step == "socratic" and not any(s.id == req.section_id for s in bb.outline):
+        # The synchronous route answers an unknown section with a 404. Accepting
+        # a job that is certain to fail would turn that into a poll and a
+        # failure state, which is a worse way to learn the same thing.
+        raise HTTPException(status_code=404, detail=f"no such section: {req.section_id!r}")
 
     if req.step == RUN_ALL:
         task: Callable[[], object] = lambda: _run_all_work(session_id, bb, req)  # noqa: E731
@@ -649,6 +694,8 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
         task = lambda: _multi_chat_work(req)  # noqa: E731
     elif req.step == "dialectic":
         task = lambda: _dialectic_work(req)  # noqa: E731
+    elif req.step == "socratic":
+        task = lambda: _socratic_work(bb, req)  # noqa: E731
     else:
         step = _JOB_STEPS.get(req.step)
         if step is None:
@@ -656,14 +703,12 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
                 status_code=400,
                 detail=(
                     f"unknown step {req.step!r}; expected one of "
-                    f"{sorted([*_JOB_STEPS, RUN_ALL, *READ_ONLY_STEPS])}"
+                    f"{sorted([*_JOB_STEPS, RUN_ALL, *QUESTION_STEPS, 'socratic'])}"
                 ),
             )
         task = lambda: step(bb)  # noqa: E731
     try:
-        job = _jobs.submit(
-            session_id, req.step, task, mutates=req.step not in READ_ONLY_STEPS
-        )
+        job = _jobs.submit(session_id, req.step, task, mutates=_mutates(req))
     except SessionBusy as busy:
         # 409, not 429: this is not rate limiting, it is a statement that the
         # session is in a state where a second step cannot start. The caller

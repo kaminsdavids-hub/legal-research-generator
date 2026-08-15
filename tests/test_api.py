@@ -832,3 +832,88 @@ def test_an_empty_message_is_refused_before_a_job_starts(client: TestClient) -> 
 
     assert resp.status_code == 400
     assert "must not be empty" in resp.json()["detail"]
+
+
+def test_socratic_exclusivity_is_decided_by_the_request_not_the_step() -> None:
+    """The last conversion broke the rule the previous one established. The same
+    step name is read-only when it only answers and exclusive when it applies
+    the revision, so a name-based set cannot express it: it would either lock
+    out concurrent questions that harm nothing, or let a revision land while a
+    draft rewrites the same section."""
+
+    from legal_research.api.app import _mutates
+    from legal_research.api.schemas import JobRequest
+
+    assert _mutates(JobRequest(step="socratic", apply_revision=False)) is False
+    assert _mutates(JobRequest(step="socratic", apply_revision=True)) is True
+    assert _mutates(JobRequest(step="multi-chat")) is False
+    assert _mutates(JobRequest(step="dialectic")) is False
+    assert _mutates(JobRequest(step="draft")) is True
+    assert _mutates(JobRequest(step="run-all")) is True
+
+
+def test_an_applying_socratic_job_takes_the_session_lock() -> None:
+    """The consequence that matters: a revision that writes must not run beside
+    a draft rewriting the same manuscript."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+    from legal_research.api.jobs import SessionBusy
+
+    release = threading.Event()
+    held = _jobs.submit("socratic-session", "draft", release.wait)
+    try:
+        # Answering only: allowed alongside the draft.
+        asking = _jobs.submit("socratic-session", "socratic", lambda: None, mutates=False)
+        assert asking.wait(timeout=10)
+        # Applying: refused, because it writes.
+        with pytest.raises(SessionBusy):
+            _jobs.submit("socratic-session", "socratic", lambda: None, mutates=True)
+    finally:
+        release.set()
+        held.wait(timeout=10)
+
+
+def test_an_unknown_section_is_404_before_a_job_starts(client: TestClient) -> None:
+    """The synchronous route answers an unknown section with a 404. Submitting a
+    job certain to fail would demote that to a poll and a failure state."""
+
+    session = client.post("/api/sessions", json={"title": "socratic"}).json()
+
+    resp = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "socratic", "message": "is this paragraph doing work?",
+              "section_id": "no-such-section"},
+    )
+
+    assert resp.status_code == 404
+    assert "no-such-section" in resp.json()["detail"]
+
+
+def test_socratic_runs_as_a_job_and_returns_its_own_response(client: TestClient) -> None:
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "socratic"}).json()
+    sid = session["session_id"]
+    # A run is needed before there is a paragraph to interrogate.
+    run = client.post(
+        f"/api/sessions/{sid}/jobs",
+        json={"step": "run-all", "idea": "open weights and the EAR", "title": "socratic"},
+    ).json()["job_id"]
+    assert _jobs.get(run).wait(timeout=300)
+    section_id = client.get(f"/api/sessions/{sid}").json()["outline"][0]["id"]
+
+    submitted = client.post(
+        f"/api/sessions/{sid}/jobs",
+        json={"step": "socratic", "message": "what work is this paragraph doing?",
+              "section_id": section_id},
+    )
+    assert submitted.status_code == 202
+    job_id = submitted.json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300)
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+    assert body["state"] == "succeeded", body["error"]
+    assert body["result"]["section_id"] == section_id
+    assert body["result"]["applied"] is False

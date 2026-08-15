@@ -171,15 +171,24 @@ that takes four minutes with no feedback is indistinguishable from a hang.
 
 Steps available as jobs: `run-all`, `brainstorm`, `ideate`, `outline`,
 `research`, `draft`, `voice`, `verify`, `format`, `novelty`, `mechanism`,
-`multi-chat`, `dialectic`.
+`multi-chat`, `dialectic`, `socratic`. Every route that drives a model is now
+one of these; nothing a proxy carries is long-running.
 
-The last two are different in kind and the difference is load-bearing. They
-answer a question without touching the blackboard, so the whole response comes
-back as the job's `result` and there is nothing to fetch afterwards — and they
-are **not exclusive**. Several can run at once, including while a draft is in
-flight. Putting them under the one-writer-per-session rule would have removed
-something a user can already do, hold two conversations, in order to prevent a
-corruption they cannot cause.
+The last three are different in kind. They answer a question rather than
+advancing the manuscript, so the whole response comes back as the job's `result`
+and there is nothing to fetch afterwards — and they are generally **not
+exclusive**. Several can run at once, including while a draft is in flight.
+Putting them under the one-writer-per-session rule would have removed something
+a user can already do, hold two conversations, in order to prevent a corruption
+they cannot cause.
+
+**`socratic` is the exception that shapes the rule.** It answers a question about
+a paragraph and, when `apply_revision` is set, rewrites it. So the same step is
+read-only on one call and exclusive on the next, and whether a submission writes
+is a property of the *request*, not of the step name. `_mutates()` in `app.py` is
+where that is decided. A name-based rule would either lock out concurrent
+questions that harm nothing, or let a revision land while a draft is rewriting
+the same section.
 
 `run-all` is the only one that takes arguments (`idea`, `title`, `max_ideas`),
 and the only one whose result is not simply the blackboard — the per-agent step
@@ -198,8 +207,9 @@ And only one step runs per session at a time: steps mutate a shared blackboard
 in place, so a second submission gets a 409 rather than being queued, which
 would hide from the caller that their step had not started.
 
-**Still synchronous:** `/revise/socratic`, and the original routes for
-everything above, which are unchanged and correct for a loopback client.
+**Still synchronous:** the original routes for everything above. They are
+unchanged, still tested, and correct for a loopback client with nothing in
+between.
 
 A note on what polling costs the interactive steps. `multi-chat` and `dialectic`
 have a person waiting on a reply, and a 2-second poll adds up to 2 seconds of
