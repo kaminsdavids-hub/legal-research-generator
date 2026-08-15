@@ -151,29 +151,39 @@ to anonymous requests would not secure the backend, it would republish it at a
 new address, which is why the function returns 503 when neither
 `PROXY_PASSWORD` nor `PROXY_ALLOW_PUBLIC` is set.
 
-### The timeout, which decides how much of the app can use this
+### The timeout, and the job API that answers it
 
-Netlify synchronous functions cap at **10 seconds by default and 26 at most**.
-This backend's own budget is `LRG_LLM_TIMEOUT_SECONDS=300` and
-`LRG_MULTI_CHAT_MAX_LATENCY_SECONDS=260`. So the proxy is correct for the fast
-routes and cannot carry the slow ones, no matter how it is written:
+Netlify synchronous functions cap at **10 seconds by default and 26 at most**,
+while this backend's budget is `LRG_LLM_TIMEOUT_SECONDS=300`. A five-minute
+request cannot be made to fit under a 26-second ceiling however it is written,
+so the slow steps stopped being requests:
 
-* **Works:** `/api/health`, `/api/config`, session create and read, `/report`,
-  `/preview`, `/ideas/select`.
-* **Will 502 on timeout:** `/run-all`, `/draft`, `/research`, `/verify`,
-  `/brainstorm`, `/ideate`, `/multi-chat`, `/dialectic`, `/revise`, `/novelty`.
+```
+POST /api/sessions/{id}/jobs   {"step": "draft"}   -> 202 {"job_id": ...}
+GET  /api/jobs/{job_id}                            -> {"state": "running"|"succeeded"|"failed"}
+GET  /api/sessions/{id}                            -> the result, fetched once on success
+```
 
-That is a platform limit, not a bug to fix here. The three ways out, in
-increasing order of work:
+Every call is now fast by construction, so every hop in front of the backend
+sees only short requests. `runStep()` in `frontend/lib/api.ts` is the client
+half; it polls every 2 seconds and reports each state change, because a step
+that takes four minutes with no feedback is indistinguishable from a hang.
 
-1. **Keep the slow routes off the proxy.** Point them straight at the backend
-   and gate them with `LRG_API_KEY` in the browser — the design in
-   `frontend/lib/api.ts` before this change. Splits the credential story in two.
-2. **Make the slow routes asynchronous.** `POST` returns a job id immediately,
-   the client polls a fast status route. Every call through the proxy then fits
-   well inside the limit. This is the right answer and it is a backend change.
-3. **Do not use Netlify for the API.** Put the backend behind something without
-   a 26-second ceiling.
+Steps available as jobs: `brainstorm`, `ideate`, `outline`, `research`, `draft`,
+`voice`, `verify`, `format`, `novelty`, `mechanism`.
+
+**Two properties worth knowing before relying on this.** Jobs live in the
+backend process's memory and die with it, exactly like the sessions they mutate
+— a restart loses both, so this is not a queue and must not be treated as one.
+And only one step runs per session at a time: steps mutate a shared blackboard
+in place, so a second submission gets a 409 rather than being queued, which
+would hide from the caller that their step had not started.
+
+**Still synchronous, and therefore still unusable through the proxy:**
+`/run-all` (the entire pipeline in one call), `/multi-chat`, `/dialectic` and
+`/revise/socratic`. They remain correct for a loopback client. `/run-all` in
+particular is the one worth converting next, since it is the slowest route in
+the app.
 
 ### Reachability
 

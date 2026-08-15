@@ -30,10 +30,14 @@
 #                       if the site is gated another way, in which case set
 #                       PROXY_ALLOW_PUBLIC=true so the choice is on the record.
 #
-# KNOWN LIMIT: Netlify synchronous functions cap at 10s by default and 26s at
-# most. This backend's own budget is LRG_LLM_TIMEOUT_SECONDS=300 and
-# LRG_MULTI_CHAT_MAX_LATENCY_SECONDS=260, so every route that drives a model
-# will exceed the function timeout and return 502 no matter how it is coded.
-# The proxy is correct for /api/config, /api/health, session reads and reports;
-# it cannot carry /api/sessions/*/run-all, /draft, /research, /verify,
-# /multi-chat or /dialectic. See deploy/README.md.
+# THE TIMEOUT, and how it is handled. Netlify synchronous functions cap at 10s
+# by default and 26s at most, while this backend's budget is
+# LRG_LLM_TIMEOUT_SECONDS=300. A five-minute request cannot be made to fit, so
+# the slow steps stopped being requests: POST /api/sessions/{id}/jobs returns
+# 202 immediately and the client polls GET /api/jobs/{id}. Every call through
+# this proxy is now fast by construction.
+#
+# Still synchronous on the backend and therefore still unusable through the
+# proxy: /run-all (the whole pipeline in one call), /multi-chat, /dialectic and
+# /revise/socratic. Those remain correct for a loopback client. See
+# deploy/README.md.

@@ -248,3 +248,19 @@ class RunAllResponse(BaseModel):
     session_id: str
     steps: list[StepInfo]
     shippable: bool
+
+
+class JobRequest(BaseModel):
+    #: Which pipeline step to run. Validated against an explicit allow-list in
+    #: the route, not against this type, so an unknown value gets a 400 naming
+    #: the permitted set rather than a 422 with a schema dump.
+    step: str
+
+
+class JobResponse(BaseModel):
+    job_id: str
+    session_id: str
+    step: str
+    state: str
+    #: Non-empty only when the step failed. The message, not the traceback.
+    error: str = ""

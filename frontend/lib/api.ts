@@ -181,6 +181,74 @@ export async function fetchBlobUrl(path: string): Promise<string> {
   return URL.createObjectURL(await res.blob());
 }
 
+// --------------------------------------------------------------------------
+// Slow steps
+//
+// These drive a model and can run for minutes. Sent through the job routes so
+// every individual HTTP call is fast: the Netlify function in front of this has
+// a 26-second ceiling, and a five-minute request cannot be made to fit under it
+// however it is written.
+//
+// The synchronous routes still exist on the backend and are correct for a
+// loopback client with nothing in between. This client does not use them,
+// because it is the one that runs behind the proxy.
+// --------------------------------------------------------------------------
+
+export type JobState = "running" | "succeeded" | "failed";
+
+export interface JobStatus {
+  job_id: string;
+  session_id: string;
+  step: string;
+  state: JobState;
+  error: string;
+}
+
+export type JobStep =
+  | "brainstorm"
+  | "ideate"
+  | "outline"
+  | "research"
+  | "draft"
+  | "voice"
+  | "verify"
+  | "format"
+  | "novelty"
+  | "mechanism";
+
+/** Submit a step and resolve when it finishes, or reject with what went wrong.
+ *
+ *  `onState` fires on every poll so a caller can show progress; a step that
+ *  takes four minutes with no feedback is indistinguishable from a hang.
+ *
+ *  The 2s interval is a deliberate floor: these steps take tens of seconds at
+ *  best, so polling faster only multiplies function invocations, which on
+ *  Netlify are metered. */
+export async function runStep(
+  sessionId: string,
+  step: JobStep,
+  onState?: (state: JobState) => void,
+  intervalMs = 2000
+): Promise<Blackboard> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ step }),
+  });
+  onState?.(started.state);
+
+  let state = started.state;
+  while (state === "running") {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
+    state = status.state;
+    onState?.(state);
+    if (state === "failed") throw new Error(`${step} failed: ${status.error}`);
+  }
+  // Fetched once, on success. The poll deliberately does not carry the
+  // blackboard: it is large, and a poller would re-download it every 2s.
+  return jsonFetch<Blackboard>(`/api/sessions/${sessionId}`);
+}
+
 export const api = {
   config: () => jsonFetch<AppConfig>("/api/config"),
   createSession: (title: string) =>

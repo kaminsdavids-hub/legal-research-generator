@@ -563,3 +563,123 @@ def test_the_startup_warning_fires_only_where_it_matters() -> None:
     assert "LRG_API_KEY" in said[0]
     assert warn_if_unprotected("0.0.0.0", "a-key", said.append) is False
     assert warn_if_unprotected("127.0.0.1", "", said.append) is False
+
+
+# --------------------------------------------------------------------------- #
+# Slow steps as jobs
+# --------------------------------------------------------------------------- #
+def test_submitting_a_step_returns_at_once_with_an_id(client: TestClient) -> None:
+    """202, not 200: the work has been accepted and has not been done. A 200
+    would tell every cache and client library that this holds a result."""
+
+    session = client.post("/api/sessions", json={"title": "async"}).json()
+
+    resp = client.post(f"/api/sessions/{session['session_id']}/jobs", json={"step": "ideate"})
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["job_id"] and body["step"] == "ideate"
+    assert body["state"] in {"running", "succeeded"}
+
+
+def test_polling_reaches_a_terminal_state(client: TestClient) -> None:
+    """The contract the proxy depends on: a client that saw `running` must
+    eventually see something else, and each poll must be fast."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "async"}).json()
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs", json={"step": "ideate"}
+    ).json()["job_id"]
+
+    assert _jobs.get(job_id).wait(timeout=120), "step did not finish"
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+    assert body["state"] in {"succeeded", "failed"}
+    # The result is not inlined; the client fetches the session once, on success.
+    assert "blackboard" not in body
+
+
+def test_a_failing_step_is_reported_not_lost(client: TestClient) -> None:
+    """A job that vanished or hung would leave the client polling forever with
+    nothing to show a user. The step failed; the server did not."""
+
+    from legal_research.api.app import _jobs
+    from legal_research.api.jobs import JobState
+
+    def boom() -> None:
+        raise RuntimeError("the model server is down")
+
+    job = _jobs.submit("session-x", "draft", boom)
+    assert job.wait(timeout=10)
+
+    assert job.state is JobState.FAILED
+    body = client.get(f"/api/jobs/{job.id}").json()
+    assert body["state"] == "failed"
+    assert "the model server is down" in body["error"]
+    # The message, not our stack frames.
+    assert "Traceback" not in body["error"]
+
+
+def test_a_second_step_on_one_session_is_refused(client: TestClient) -> None:
+    """Steps mutate a shared blackboard in place, so two running against one
+    session would interleave writes. Refused rather than queued: queueing hides
+    from the caller that their step has not started."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+    from legal_research.api.jobs import SessionBusy
+
+    release = threading.Event()
+    first = _jobs.submit("busy-session", "draft", release.wait)
+    try:
+        with pytest.raises(SessionBusy) as caught:
+            _jobs.submit("busy-session", "verify", lambda: None)
+        assert caught.value.job_id == first.id
+    finally:
+        release.set()
+        first.wait(timeout=10)
+
+    # Once it finishes the session is free again.
+    assert _jobs.submit("busy-session", "verify", lambda: None).wait(timeout=10)
+
+
+def test_the_busy_session_surfaces_as_409(client: TestClient) -> None:
+    """Not 429. This is not rate limiting, it is a statement that the session is
+    in a state where a second step cannot start."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "async"}).json()
+    release = threading.Event()
+    held = _jobs.submit(session["session_id"], "draft", release.wait)
+    try:
+        resp = client.post(f"/api/sessions/{session['session_id']}/jobs", json={"step": "verify"})
+        assert resp.status_code == 409
+        assert held.id in resp.json()["detail"]
+    finally:
+        release.set()
+        held.wait(timeout=10)
+
+
+def test_an_unknown_step_names_the_permitted_set(client: TestClient) -> None:
+    """An allow-list, not getattr(pipeline, step): turning a path segment into
+    an attribute lookup on a live object would let a caller reach anything the
+    pipeline exposes."""
+
+    session = client.post("/api/sessions", json={"title": "async"}).json()
+
+    resp = client.post(
+        f"/api/sessions/{session['session_id']}/jobs", json={"step": "_seed_fallback_ideas"}
+    )
+
+    assert resp.status_code == 400
+    assert "research" in resp.json()["detail"]
+
+
+def test_polling_an_unknown_job_is_404(client: TestClient) -> None:
+    assert client.get("/api/jobs/nope").status_code == 404

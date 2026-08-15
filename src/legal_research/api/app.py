@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -21,6 +22,7 @@ from ..multi_chat import MultiChatTurn as MultiChatEngineTurn
 from ..multi_chat import MultiModelChat
 from ..pipeline import LegalResearchPipeline
 from .auth import ApiKeyMiddleware, warn_if_unprotected
+from .jobs import JobStore, SessionBusy
 from .schemas import (
     BrainstormRequest,
     ConfigResponse,
@@ -30,6 +32,8 @@ from .schemas import (
     DraftEssayRequest,
     IdeaStatusUpdate,
     IdeateRequest,
+    JobRequest,
+    JobResponse,
     MultiChatRequest,
     MultiChatResponse,
     RenderPdfRequest,
@@ -69,6 +73,7 @@ app.add_middleware(
 pipeline = LegalResearchPipeline(_settings)
 multi_chat = MultiModelChat(_settings)
 _sessions: dict[str, Blackboard] = {}
+_jobs = JobStore()
 
 #: Built lazily: the family guard raises if two debate roles share a base model
 #: family, and that must surface as a request error rather than a dead import.
@@ -513,3 +518,76 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# --------------------------------------------------------------------------- #
+# Slow steps as jobs
+#
+# The synchronous routes above stay exactly as they are. They are correct for a
+# loopback client with no proxy in between, they are what the tests exercise,
+# and removing them would break every caller to fix a problem only some callers
+# have. These routes are the alternative for clients behind something with a
+# shorter patience than a five-minute model call.
+# --------------------------------------------------------------------------- #
+
+#: Steps that may be run as a job, and how. Every one of these drives a model.
+#:
+#: A table rather than a generic `getattr(pipeline, step)`: that would turn a
+#: path segment into an attribute lookup on a live object, letting a caller
+#: reach anything the pipeline exposes. The allowed set is stated here.
+_JOB_STEPS: dict[str, Callable[[Blackboard], object]] = {
+    "brainstorm": lambda bb: pipeline.brainstorm(bb, None),
+    "ideate": lambda bb: pipeline.ideate(bb, None),
+    "outline": pipeline.build_outline,
+    "research": pipeline.research,
+    "draft": pipeline.draft,
+    "voice": pipeline.edit_voice,
+    "verify": pipeline.verify,
+    "format": pipeline.format_citations,
+    "novelty": pipeline.assess_novelty,
+    "mechanism": pipeline.mechanism_gate,
+}
+
+
+@app.post("/api/sessions/{session_id}/jobs", response_model=JobResponse, status_code=202)
+def submit_job(session_id: str, req: JobRequest) -> JobResponse:
+    """Start a slow step and return at once with an id to poll.
+
+    202, not 200: the work has been accepted and has not been done. A 200 here
+    would tell every cache and client library that it holds a result.
+    """
+
+    bb = _get(session_id)
+    work = _JOB_STEPS.get(req.step)
+    if work is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown step {req.step!r}; expected one of {sorted(_JOB_STEPS)}",
+        )
+    try:
+        job = _jobs.submit(session_id, req.step, lambda: work(bb))
+    except SessionBusy as busy:
+        # 409, not 429: this is not rate limiting, it is a statement that the
+        # session is in a state where a second step cannot start. The caller
+        # should poll the job it already has rather than retry this.
+        raise HTTPException(status_code=409, detail=str(busy)) from busy
+    return JobResponse(job_id=job.id, session_id=session_id, step=job.step, state=job.state)
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobResponse)
+def get_job(job_id: str) -> JobResponse:
+    """Poll a job. Answers in microseconds, which is the whole point."""
+
+    job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such job")
+    return JobResponse(
+        job_id=job.id,
+        session_id=job.session_id,
+        step=job.step,
+        state=job.state,
+        error=job.error,
+        # The blackboard is not inlined here. It is large, a poller would fetch
+        # it repeatedly for no reason, and it is already available at
+        # /api/sessions/{id} -- which the client should call once, on success.
+    )
