@@ -75,7 +75,14 @@ class Job:
     #: at all -- the per-agent step log and the shippable verdict -- and that
     #: would otherwise be lost the moment the run stopped being a request.
     result: dict[str, Any] | None = None
+    #: Append-only progress, in the order things actually happened. The panel
+    #: runs five models concurrently, so this is completion order and not the
+    #: configured order -- which is the point: it is what the user is waiting on.
+    events: list[dict[str, Any]] = field(default_factory=list)
     _finished: threading.Event = field(default_factory=threading.Event, repr=False)
+    #: Guards `events` and wakes followers. The engine emits from pool threads,
+    #: so appends are genuinely concurrent.
+    _progress: threading.Condition = field(default_factory=threading.Condition, repr=False)
 
     @property
     def done(self) -> bool:
@@ -91,6 +98,30 @@ class Job:
 
         return self._finished.wait(timeout)
 
+    def emit(self, event: dict[str, Any]) -> None:
+        """Record progress and wake anyone following.
+
+        Called from whatever thread the work runs on, including the panel's
+        pool threads.
+        """
+
+        with self._progress:
+            self.events.append(event)
+            self._progress.notify_all()
+
+    def follow(self, seen: int, timeout: float) -> list[dict[str, Any]]:
+        """Progress beyond index ``seen``, waiting up to ``timeout`` for some.
+
+        Returns an empty list if nothing arrived, which the caller reads as
+        "still working" rather than "finished" -- completion is `done`, and the
+        two must not be conflated or a quiet job would look like a finished one.
+        """
+
+        with self._progress:
+            if len(self.events) <= seen and not self.done:
+                self._progress.wait(timeout)
+            return self.events[seen:]
+
     def snapshot(self) -> dict[str, Any]:
         """What a client is told about this job. One definition, so the polling
         route and the event stream cannot describe the same job differently."""
@@ -102,6 +133,7 @@ class Job:
             "state": self.state.value,
             "error": self.error,
             "result": self.result,
+            "events": list(self.events),
         }
 
 
@@ -124,7 +156,7 @@ class JobStore:
         self,
         session_id: str,
         step: str,
-        work: Callable[[], Any],
+        work: Callable[[Job], Any],
         *,
         mutates: bool = True,
     ) -> Job:
@@ -134,6 +166,14 @@ class JobStore:
         ``result``. Anything else is discarded -- the pipeline steps return
         agent objects that mean nothing to a client, and serialising them would
         put internals on the wire by accident.
+
+        ``work`` always takes the job as its only argument -- that is how a step
+        reports progress, since anything that wants to emit needs a handle on
+        the job it belongs to. One signature, always, rather than accepting
+        either shape and inferring which was passed: that inference read
+        ``threading.Event.wait`` as wanting the job, called it with the job as
+        its timeout, and quietly turned the session lock off. A step with
+        nothing to report names the argument and ignores it.
 
         ``mutates=False`` marks work that only reads the session. It neither
         takes the per-session slot nor is blocked by it, so several can run at
@@ -158,9 +198,9 @@ class JobStore:
         thread.start()
         return job
 
-    def _run(self, job: Job, work: Callable[[], Any]) -> None:
+    def _run(self, job: Job, work: Callable[[Job], Any]) -> None:
         try:
-            outcome = work()
+            outcome = work(job)
             if isinstance(outcome, dict):
                 job.result = outcome
             job.state = JobState.SUCCEEDED
@@ -172,8 +212,12 @@ class JobStore:
             traceback.print_exc()
         finally:
             # Set last, and always: a client that saw RUNNING must eventually see
-            # a terminal state, including when the step raised.
+            # a terminal state, including when the step raised. Followers are
+            # woken too, or one parked in `follow` would sit out its full
+            # timeout after the job had already ended.
             job._finished.set()
+            with job._progress:
+                job._progress.notify_all()
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)

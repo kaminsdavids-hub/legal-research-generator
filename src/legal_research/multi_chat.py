@@ -10,6 +10,7 @@ import contextlib
 import math
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Literal
@@ -754,10 +755,33 @@ class MultiModelChat:
             messages.append(ChatMessage(role, text))
         return messages
 
-    def chat(self, message: str, history: list[MultiChatTurn] | None = None) -> MultiChatResult:
+    def chat(
+        self,
+        message: str,
+        history: list[MultiChatTurn] | None = None,
+        on_event: Callable[[dict[str, object]], None] | None = None,
+    ) -> MultiChatResult:
+        """Run the panel, synthesise, verify, and return the whole exchange.
+
+        ``on_event`` receives progress as it happens: which model has answered,
+        how long it took, how much it said. A five-model panel takes tens of
+        seconds and returns nothing until the last one is done, so without this
+        a caller can only show a spinner and hope. It is called from the pool
+        threads, so it must be thread-safe, and it is wrapped so that a callback
+        which raises cannot break the exchange -- reporting on the work must not
+        be able to destroy the work.
+        """
+
         prompt = message.strip()
         if not prompt:
             raise ValueError("message must not be empty")
+
+        def report(kind: str, **fields: object) -> None:
+            if on_event is None:
+                return
+            with contextlib.suppress(Exception):
+                # Reporting on the work must not be able to destroy the work.
+                on_event({"event": kind, **fields})
 
         started_at = time.monotonic()
         prior = self._history_messages(history or [])
@@ -782,8 +806,11 @@ class MultiModelChat:
 
         _, per_model_timeout = self._panel_budget(len(panel_specs))
 
+        report("panel_started", models=[model for _, model in panel_specs])
+
         def _ask(spec: tuple[str, str]) -> ModelAnswer:
             name, model = spec
+            began = time.monotonic()
             content = self._query_panel_model(
                 name=name,
                 model=model,
@@ -793,6 +820,18 @@ class MultiModelChat:
                 started_at=started_at,
                 authority_packet=authority_packet,
                 per_model_timeout=per_model_timeout,
+            )
+            # Emitted in completion order, not the configured order the results
+            # are collected in. Completion order is what the person waiting sees.
+            report(
+                "model_answered",
+                name=name,
+                model=model,
+                seconds=round(time.monotonic() - began, 1),
+                characters=len(content),
+                # A model that timed out or errored returns empty; saying so is
+                # more useful than reporting it as an answer of length zero.
+                answered=bool(content.strip()),
             )
             return ModelAnswer(model=model, content=content)
 
@@ -804,6 +843,8 @@ class MultiModelChat:
             # configured order regardless of which model finishes first.
             with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 model_answers = list(pool.map(_ask, panel_specs))
+
+        report("synthesising", answers=len([a for a in model_answers if a.content.strip()]))
 
         final_answer = ""
         remaining = self._remaining_seconds(started_at)

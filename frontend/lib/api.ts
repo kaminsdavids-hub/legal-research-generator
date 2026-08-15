@@ -204,6 +204,24 @@ export interface JobStatus {
   error: string;
   /** Only run-all sets one; for every other step the result is the blackboard. */
   result: Record<string, unknown> | null;
+  /** Progress in the order it happened. Also present on the poll, so falling
+   *  back to polling does not lose the progress you were following. */
+  events: JobEvent[];
+}
+
+/** One thing that happened during a step. `multi-chat` reports the panel:
+ *  `panel_started` with the model list, then `model_answered` per model as each
+ *  finishes — in completion order, which is what the person waiting sees — then
+ *  `synthesising`. */
+export interface JobEvent {
+  event: string;
+  model?: string;
+  name?: string;
+  seconds?: number;
+  characters?: number;
+  answered?: boolean;
+  models?: string[];
+  answers?: number;
 }
 
 export type JobStep =
@@ -264,7 +282,8 @@ export async function askAsJob<T>(
   step: "multi-chat" | "dialectic",
   message: string,
   history: SocraticTurn[] = [],
-  onState?: (state: JobState) => void
+  onState?: (state: JobState) => void,
+  onProgress?: (event: JobEvent) => void
 ): Promise<T> {
   const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
     method: "POST",
@@ -272,7 +291,7 @@ export async function askAsJob<T>(
   });
   onState?.(started.state);
 
-  const status = await awaitJob(started.job_id, onState);
+  const status = await awaitJob(started.job_id, onState, 2000, onProgress);
   if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
   return status.result as unknown as T;
 }
@@ -319,7 +338,11 @@ export async function socraticAsJob(
  *  Note what this does not stream. The engines are batch internally, so these
  *  are events about a job, not tokens of an answer; the payload arrives whole
  *  when the step finishes. */
-async function streamJob(jobId: string, onState?: (state: JobState) => void): Promise<JobStatus> {
+async function streamJob(
+  jobId: string,
+  onState?: (state: JobState) => void,
+  onProgress?: (event: JobEvent) => void
+): Promise<JobStatus> {
   const res = await fetch(`${API_BASE}/api/jobs/${jobId}/events`, { headers: authHeaders() });
   if (res.status === 401) throw new UnauthorizedError();
   if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
@@ -342,6 +365,10 @@ async function streamJob(jobId: string, onState?: (state: JobState) => void): Pr
       const event = /^event: (.*)$/m.exec(frame)?.[1];
       const data = /^data: (.*)$/m.exec(frame)?.[1];
       if (!event || !data) continue;
+      if (event === "progress") {
+        onProgress?.(JSON.parse(data) as JobEvent);
+        continue;
+      }
       const status = JSON.parse(data) as JobStatus;
       onState?.(status.state);
       if (event === "done") {
@@ -360,20 +387,26 @@ async function streamJob(jobId: string, onState?: (state: JobState) => void): Pr
 export async function awaitJob(
   jobId: string,
   onState?: (state: JobState) => void,
-  intervalMs = 2000
+  intervalMs = 2000,
+  onProgress?: (event: JobEvent) => void
 ): Promise<JobStatus> {
   try {
-    return await streamJob(jobId, onState);
+    return await streamJob(jobId, onState, onProgress);
   } catch (err) {
     if (err instanceof UnauthorizedError) throw err;
+    // Polling still delivers progress, because the poll carries `events` too —
+    // a proxy cutting the stream should cost you the immediacy, not the
+    // information. Replay only what is new, or every poll would repeat the lot.
+    let seen = 0;
     let status = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
-    onState?.(status.state);
-    while (status.state === "running") {
+    for (;;) {
+      onState?.(status.state);
+      status.events.slice(seen).forEach((e) => onProgress?.(e));
+      seen = status.events.length;
+      if (status.state !== "running") return status;
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
       status = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
-      onState?.(status.state);
     }
-    return status;
   }
 }
 

@@ -611,7 +611,7 @@ def test_a_failing_step_is_reported_not_lost(client: TestClient) -> None:
     def boom() -> None:
         raise RuntimeError("the model server is down")
 
-    job = _jobs.submit("session-x", "draft", boom)
+    job = _jobs.submit("session-x", "draft", lambda _job: boom())
     assert job.wait(timeout=10)
 
     assert job.state is JobState.FAILED
@@ -633,17 +633,17 @@ def test_a_second_step_on_one_session_is_refused(client: TestClient) -> None:
     from legal_research.api.jobs import SessionBusy
 
     release = threading.Event()
-    first = _jobs.submit("busy-session", "draft", release.wait)
+    first = _jobs.submit("busy-session", "draft", lambda _job: release.wait())
     try:
         with pytest.raises(SessionBusy) as caught:
-            _jobs.submit("busy-session", "verify", lambda: None)
+            _jobs.submit("busy-session", "verify", lambda _job: None)
         assert caught.value.job_id == first.id
     finally:
         release.set()
         first.wait(timeout=10)
 
     # Once it finishes the session is free again.
-    assert _jobs.submit("busy-session", "verify", lambda: None).wait(timeout=10)
+    assert _jobs.submit("busy-session", "verify", lambda _job: None).wait(timeout=10)
 
 
 def test_the_busy_session_surfaces_as_409(client: TestClient) -> None:
@@ -656,7 +656,7 @@ def test_the_busy_session_surfaces_as_409(client: TestClient) -> None:
 
     session = client.post("/api/sessions", json={"title": "async"}).json()
     release = threading.Event()
-    held = _jobs.submit(session["session_id"], "draft", release.wait)
+    held = _jobs.submit(session["session_id"], "draft", lambda _job: release.wait())
     try:
         resp = client.post(f"/api/sessions/{session['session_id']}/jobs", json={"step": "verify"})
         assert resp.status_code == 409
@@ -789,12 +789,12 @@ def test_two_conversations_can_run_at_once(client: TestClient) -> None:
     from legal_research.api.app import _jobs
 
     release = threading.Event()
-    first = _jobs.submit("chatty", "multi-chat", release.wait, mutates=False)
+    first = _jobs.submit("chatty", "multi-chat", lambda _job: release.wait(), mutates=False)
     try:
-        second = _jobs.submit("chatty", "dialectic", lambda: None, mutates=False)
+        second = _jobs.submit("chatty", "dialectic", lambda _job: None, mutates=False)
         assert second.wait(timeout=10), "the second conversation was blocked by the first"
         # And a read-only job in flight does not block a writer either.
-        writer = _jobs.submit("chatty", "draft", lambda: None)
+        writer = _jobs.submit("chatty", "draft", lambda _job: None)
         assert writer.wait(timeout=10)
     finally:
         release.set()
@@ -810,10 +810,10 @@ def test_a_writing_step_is_still_exclusive(client: TestClient) -> None:
     from legal_research.api.jobs import SessionBusy
 
     release = threading.Event()
-    held = _jobs.submit("writer-session", "draft", release.wait)
+    held = _jobs.submit("writer-session", "draft", lambda _job: release.wait())
     try:
         with pytest.raises(SessionBusy):
-            _jobs.submit("writer-session", "verify", lambda: None)
+            _jobs.submit("writer-session", "verify", lambda _job: None)
     finally:
         release.set()
         held.wait(timeout=10)
@@ -862,14 +862,14 @@ def test_an_applying_socratic_job_takes_the_session_lock() -> None:
     from legal_research.api.jobs import SessionBusy
 
     release = threading.Event()
-    held = _jobs.submit("socratic-session", "draft", release.wait)
+    held = _jobs.submit("socratic-session", "draft", lambda _job: release.wait())
     try:
         # Answering only: allowed alongside the draft.
-        asking = _jobs.submit("socratic-session", "socratic", lambda: None, mutates=False)
+        asking = _jobs.submit("socratic-session", "socratic", lambda _job: None, mutates=False)
         assert asking.wait(timeout=10)
         # Applying: refused, because it writes.
         with pytest.raises(SessionBusy):
-            _jobs.submit("socratic-session", "socratic", lambda: None, mutates=True)
+            _jobs.submit("socratic-session", "socratic", lambda _job: None, mutates=True)
     finally:
         release.set()
         held.wait(timeout=10)
@@ -947,7 +947,7 @@ def test_the_stream_reports_a_job_that_already_finished(client: TestClient) -> N
 
     from legal_research.api.app import _jobs
 
-    job = _jobs.submit("stream-session", "ideate", lambda: {"ok": True})
+    job = _jobs.submit("stream-session", "ideate", lambda _job: {"ok": True})
     assert job.wait(timeout=30)
 
     with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
@@ -971,8 +971,8 @@ def test_the_stream_delivers_a_result_the_client_never_asked_twice_for(
     from legal_research.api.app import _jobs
 
     release = threading.Event()
-    job = _jobs.submit("stream-session-2", "multi-chat", lambda: release.wait() or {"answer": "x"},
-                       mutates=False)
+    job = _jobs.submit("stream-session-2", "multi-chat",
+                       lambda _job: release.wait() or {"answer": "x"}, mutates=False)
     threading.Timer(0.3, release.set).start()
 
     with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
@@ -992,7 +992,7 @@ def test_a_failure_arrives_on_the_stream_too(client: TestClient) -> None:
     def boom() -> None:
         raise RuntimeError("panel unreachable")
 
-    job = _jobs.submit("stream-session-3", "dialectic", boom, mutates=False)
+    job = _jobs.submit("stream-session-3", "dialectic", lambda _job: boom(), mutates=False)
     assert job.wait(timeout=30)
 
     with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
@@ -1008,7 +1008,7 @@ def test_the_stream_and_the_poll_describe_a_job_identically(client: TestClient) 
 
     from legal_research.api.app import _jobs
 
-    job = _jobs.submit("stream-session-4", "ideate", lambda: {"ok": 1})
+    job = _jobs.submit("stream-session-4", "ideate", lambda _job: {"ok": 1})
     assert job.wait(timeout=30)
 
     polled = client.get(f"/api/jobs/{job.id}").json()
@@ -1020,3 +1020,123 @@ def test_the_stream_and_the_poll_describe_a_job_identically(client: TestClient) 
 
 def test_streaming_an_unknown_job_is_404(client: TestClient) -> None:
     assert client.get("/api/jobs/nope/events").status_code == 404
+
+
+def test_the_panel_reports_each_model_as_it_finishes(client: TestClient) -> None:
+    """The change worth making. A five-model panel takes tens of seconds and
+    returns nothing until the last one is done; without per-model events a
+    caller can only show a spinner and hope."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "panel"}).json()
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "multi-chat", "message": "does the EAR reach open weights?"},
+    ).json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300)
+
+    events = client.get(f"/api/jobs/{job_id}").json()["events"]
+    kinds = [e["event"] for e in events]
+
+    assert kinds[0] == "panel_started"
+    assert "synthesising" in kinds
+    answered = [e for e in events if e["event"] == "model_answered"]
+    assert len(answered) == 5, "one event per panel model"
+    for event in answered:
+        assert event["model"] and isinstance(event["seconds"], float)
+        assert isinstance(event["answered"], bool)
+
+
+def test_progress_reaches_the_stream_as_it_happens(client: TestClient) -> None:
+    """Events are pushed while the job runs, not bundled into the terminal
+    frame — otherwise this would be polling with extra steps."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+
+    release = threading.Event()
+
+    def work(job) -> dict:  # noqa: ANN001 - the store passes the job in
+        job.emit({"event": "model_answered", "model": "first"})
+        release.wait(5)
+        job.emit({"event": "model_answered", "model": "second"})
+        return {"ok": True}
+
+    job = _jobs.submit("progress-session", "multi-chat", work, mutates=False)
+    threading.Timer(0.3, release.set).start()
+
+    with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
+        events = _sse_events("".join(resp.iter_text()))
+
+    progress = [data for name, data in events if name == "progress"]
+    assert [p["model"] for p in progress] == ["first", "second"]
+    assert events[-1][0] == "done"
+
+
+def test_a_late_subscriber_sees_the_whole_run(client: TestClient) -> None:
+    """Progress already recorded goes out with the opening frame, so connecting
+    late shows the run and not just its tail."""
+
+    from legal_research.api.app import _jobs
+
+    def work(job) -> dict:  # noqa: ANN001
+        job.emit({"event": "model_answered", "model": "early"})
+        return {"ok": True}
+
+    job = _jobs.submit("late-session", "multi-chat", work, mutates=False)
+    assert job.wait(timeout=30)
+
+    with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
+        events = _sse_events("".join(resp.iter_text()))
+
+    # Replayed as progress, so a client handles one kind of frame either way.
+    assert events[0][0] == "state"
+    progress = [data for name, data in events if name == "progress"]
+    assert [p["model"] for p in progress] == ["early"]
+
+
+def test_a_callback_that_raises_cannot_break_the_exchange() -> None:
+    """Reporting on the work must not be able to destroy the work."""
+
+    from legal_research.config import Settings
+    from legal_research.multi_chat import MultiModelChat
+
+    engine = MultiModelChat(Settings(llm_mode="mock", retriever_mode="mock"))
+
+    def hostile(_event: dict) -> None:
+        raise RuntimeError("subscriber exploded")
+
+    result = engine.chat("does the EAR reach open weights?", on_event=hostile)
+
+    assert result.final_answer, "the exchange completed despite the callback"
+
+
+def test_the_synchronous_route_reports_nothing(client: TestClient) -> None:
+    """It returns once, at the end, so it has nowhere to put progress and the
+    engine skips the reporting entirely."""
+
+    session = client.post("/api/sessions", json={"title": "sync"}).json()
+
+    resp = client.post(
+        f"/api/sessions/{session['session_id']}/multi-chat", json={"message": "hello"}
+    )
+
+    assert resp.status_code == 200
+    assert "events" not in resp.json()
+
+
+def test_work_is_always_called_with_its_job() -> None:
+    """One signature, always. Accepting either shape and inferring which was
+    passed read `threading.Event.wait` as wanting the job, called it with the
+    job as its timeout, and quietly turned the session lock off — four tests
+    caught it, and the fix was to stop guessing."""
+
+    from legal_research.api.app import _jobs
+
+    received: list[object] = []
+    job = _jobs.submit("signature-session", "ideate", lambda j: received.append(j) or {"ok": 1})
+    assert job.wait(timeout=10)
+
+    assert received == [job]

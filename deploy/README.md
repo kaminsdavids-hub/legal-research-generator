@@ -220,13 +220,22 @@ fast path is used where it works and the durable one is always there.
 
 Two limits, both real:
 
-**It streams events about a job, not tokens of an answer.** The engines are batch
-internally — `multi_chat.chat` runs a five-model panel and returns when the last
-one finishes, and nothing above the LLM client calls its `stream()`. Token
-streaming would mean threading a callback through the engines, and for
-multi-chat it would help only at the very end, since the final answer is
-synthesised after the panel completes. What this removes is the poll interval,
-not the wait.
+**It streams progress, not tokens.** `multi_chat.chat` now takes an `on_event`
+callback and reports the panel as it runs — `panel_started` with the model list,
+`model_answered` per model as each finishes, then `synthesising`. Those arrive
+in *completion* order rather than the configured order the results are collected
+in, because completion order is what the person waiting sees. A five-model panel
+that took forty seconds and showed nothing now shows the first model at around
+eight.
+
+It is still not token streaming. The final answer is synthesised after the whole
+panel finishes, so streaming its tokens would help only at the very end; the
+per-model events are worth more and cost far less. The callback is invoked from
+the panel's pool threads and wrapped, so a subscriber that raises cannot break
+the exchange.
+
+Progress is carried on the poll as well as the stream, so falling back to
+polling costs the immediacy and not the information.
 
 **It does not get past a function timeout.** A cap on a function invocation
 applies to a streamed response as much as a buffered one — Netlify allows 26

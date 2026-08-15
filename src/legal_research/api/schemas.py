@@ -288,3 +288,7 @@ class JobResponse(BaseModel):
     #: per-agent step log and the shippable verdict; every other step leaves it
     #: null, because their result *is* the blackboard.
     result: dict[str, Any] | None = None
+    #: Progress in the order it happened. Present on the poll as well as the
+    #: stream: a client that fell back to polling because a proxy cut the
+    #: stream should not also lose the progress it was following.
+    events: list[dict[str, Any]] = Field(default_factory=list)

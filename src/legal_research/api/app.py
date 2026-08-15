@@ -23,7 +23,7 @@ from ..multi_chat import MultiChatTurn as MultiChatEngineTurn
 from ..multi_chat import MultiModelChat
 from ..pipeline import LegalResearchPipeline
 from .auth import ApiKeyMiddleware, warn_if_unprotected
-from .jobs import JobStore, SessionBusy
+from .jobs import Job, JobStore, SessionBusy
 from .schemas import (
     BrainstormRequest,
     ConfigResponse,
@@ -635,7 +635,7 @@ def _socratic_work(bb: Blackboard, req: JobRequest) -> dict[str, object]:
     return dict(SocraticReviseResponse(**result.payload).model_dump())
 
 
-def _multi_chat_work(req: JobRequest) -> dict[str, object]:
+def _multi_chat_work(req: JobRequest, job: Job | None = None) -> dict[str, object]:
     """One multi-model exchange, in the shape the synchronous route returns.
 
     `.model_dump()` rather than a hand-built dict: the response model is the
@@ -651,6 +651,10 @@ def _multi_chat_work(req: JobRequest) -> dict[str, object]:
             )
             for turn in req.history
         ],
+        # Only when run as a job. The synchronous route has nowhere to put
+        # progress -- it returns once, at the end -- so it passes nothing and
+        # the engine skips the reporting entirely.
+        on_event=job.emit if job is not None else None,
     )
     return _multi_chat_response(result).model_dump()
 
@@ -703,13 +707,13 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
         raise HTTPException(status_code=404, detail=f"no such section: {req.section_id!r}")
 
     if req.step == RUN_ALL:
-        task: Callable[[], object] = lambda: _run_all_work(session_id, bb, req)  # noqa: E731
+        task: Callable[[Job], object] = lambda _job: _run_all_work(session_id, bb, req)  # noqa: E731
     elif req.step == "multi-chat":
-        task = lambda: _multi_chat_work(req)  # noqa: E731
+        task = lambda job: _multi_chat_work(req, job)  # noqa: E731
     elif req.step == "dialectic":
-        task = lambda: _dialectic_work(req)  # noqa: E731
+        task = lambda _job: _dialectic_work(req)  # noqa: E731
     elif req.step == "socratic":
-        task = lambda: _socratic_work(bb, req)  # noqa: E731
+        task = lambda _job: _socratic_work(bb, req)  # noqa: E731
     else:
         step = _JOB_STEPS.get(req.step)
         if step is None:
@@ -720,7 +724,7 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
                     f"{sorted([*_JOB_STEPS, RUN_ALL, *QUESTION_STEPS, 'socratic'])}"
                 ),
             )
-        task = lambda: step(bb)  # noqa: E731
+        task = lambda _job: step(bb)  # noqa: E731
     try:
         job = _jobs.submit(session_id, req.step, task, mutates=_mutates(req))
     except SessionBusy as busy:
@@ -738,18 +742,11 @@ def get_job(job_id: str) -> JobResponse:
     job = _jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="no such job")
-    return JobResponse(
-        job_id=job.id,
-        session_id=job.session_id,
-        step=job.step,
-        state=job.state,
-        error=job.error,
-        # `result` is a small summary and only run-all sets one. The blackboard
-        # is never inlined: it is large, a poller would fetch it repeatedly for
-        # no reason, and it is already at /api/sessions/{id}, which the client
-        # should call once, on success.
-        result=job.result,
-    )
+    # Built from the same snapshot the stream sends, so the two routes cannot
+    # drift into describing one job differently. The blackboard is never inlined
+    # in either: it is large, a poller would fetch it repeatedly for no reason,
+    # and it is already at /api/sessions/{id} to be called once, on success.
+    return JobResponse(**job.snapshot())
 
 
 @app.get("/api/jobs/{job_id}/events")
@@ -783,19 +780,33 @@ async def job_events(job_id: str) -> StreamingResponse:
     async def events() -> AsyncIterator[str]:
         # The current state first, before any waiting: a client that connects
         # after the job finished must still be told, or it waits forever for an
-        # event that has already happened.
+        # event that has already happened. Any progress already recorded goes
+        # with it, so a late subscriber sees the whole run and not just its tail.
         yield _sse("state", job.snapshot())
 
+        # Replayed from zero, not from the current length. A client should have
+        # to handle one kind of frame for progress, not merge the opening
+        # snapshot with everything after it -- and a subscriber that connects
+        # late is exactly the case where getting that merge wrong is invisible
+        # in testing and wrong in production.
+        seen = 0
+
         while not job.done:
-            # In a thread, because Job.wait blocks. Awaiting it directly would
+            # In a thread, because `follow` blocks. Awaiting it directly would
             # stall the event loop and every other request with it.
-            finished = await asyncio.to_thread(job.wait, _SSE_HEARTBEAT_SECONDS)
-            if not finished:
+            fresh = await asyncio.to_thread(job.follow, seen, _SSE_HEARTBEAT_SECONDS)
+            for event in fresh:
+                yield _sse("progress", event)
+            seen += len(fresh)
+            if not fresh and not job.done:
                 # Proxies and load balancers close connections that go quiet.
                 # A comment frame is the SSE convention for "still here"; it is
                 # ignored by the client rather than delivered as an event.
                 yield ": heartbeat\n\n"
 
+        # Anything that landed between the last follow and the job finishing.
+        for event in job.events[seen:]:
+            yield _sse("progress", event)
         yield _sse("done", job.snapshot())
 
     return StreamingResponse(
