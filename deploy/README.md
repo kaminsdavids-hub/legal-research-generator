@@ -211,13 +211,30 @@ would hide from the caller that their step had not started.
 unchanged, still tested, and correct for a loopback client with nothing in
 between.
 
-A note on what polling costs the interactive steps. `multi-chat` and `dialectic`
-have a person waiting on a reply, and a 2-second poll adds up to 2 seconds of
-dead time to an answer that may take twenty. That is a real regression in feel,
-paid to get them under a 26-second ceiling. If they matter more than the proxy
-does, the synchronous routes are still there; if the proxy matters more, the
-better end state is streaming rather than polling, so partial output appears as
-it is produced.
+### Streaming, and what it is actually worth here
+
+`GET /api/jobs/{id}/events` is a Server-Sent Events stream: the client holds one
+connection and the outcome arrives the moment it exists, instead of at the next
+poll. `awaitJob()` in the client tries it first and falls back to polling, so the
+fast path is used where it works and the durable one is always there.
+
+Two limits, both real:
+
+**It streams events about a job, not tokens of an answer.** The engines are batch
+internally — `multi_chat.chat` runs a five-model panel and returns when the last
+one finishes, and nothing above the LLM client calls its `stream()`. Token
+streaming would mean threading a callback through the engines, and for
+multi-chat it would help only at the very end, since the final answer is
+synthesised after the panel completes. What this removes is the poll interval,
+not the wait.
+
+**It does not get past a function timeout.** A cap on a function invocation
+applies to a streamed response as much as a buffered one — Netlify allows 26
+seconds however the body is produced — so an answer that takes a minute dies
+mid-stream behind the proxy. `GET /api/jobs/{id}` remains the path that works
+there. The stream is for clients talking to the backend directly, over loopback
+or the tailnet, which is also where the interactive steps feel worst under
+polling.
 
 ### Reachability
 

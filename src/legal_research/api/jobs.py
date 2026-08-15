@@ -82,9 +82,27 @@ class Job:
         return self.state is not JobState.RUNNING
 
     def wait(self, timeout: float | None = None) -> bool:
-        """Block until the step finishes. For tests, not for request handlers."""
+        """Block until the step finishes. For tests and worker threads.
+
+        Never call this from a request handler: it blocks the thread, and the
+        whole design is that request handlers return immediately. The event-
+        stream route waits on it in a thread pool instead.
+        """
 
         return self._finished.wait(timeout)
+
+    def snapshot(self) -> dict[str, Any]:
+        """What a client is told about this job. One definition, so the polling
+        route and the event stream cannot describe the same job differently."""
+
+        return {
+            "job_id": self.id,
+            "session_id": self.session_id,
+            "step": self.step,
+            "state": self.state.value,
+            "error": self.error,
+            "result": self.result,
+        }
 
 
 class JobStore:

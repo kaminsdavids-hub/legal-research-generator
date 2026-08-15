@@ -7,13 +7,14 @@ processing is local; the frontend talks only to this server.
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from .. import DISCLAIMER
 from ..blackboard import Blackboard
@@ -569,6 +570,19 @@ _JOB_STEPS: dict[str, Callable[[Blackboard], object]] = {
     "mechanism": pipeline.mechanism_gate,
 }
 
+#: How long the event stream waits before sending a keep-alive comment. Well
+#: under the 60 seconds most proxies allow an idle connection, and long enough
+#: that a quiet minute costs a handful of frames rather than a flood.
+_SSE_HEARTBEAT_SECONDS = 15.0
+
+
+def _sse(event: str, payload: dict[str, object]) -> str:
+    """One Server-Sent Event. Named, so a client can switch on the event type
+    rather than parsing the payload to find out what it just received."""
+
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
 #: Steps that answer a question rather than advancing the manuscript. They are
 #: exempt from the one-writer-per-session rule: a user can already hold two
 #: conversations at once, and putting them under the writers' lock would remove
@@ -735,4 +749,63 @@ def get_job(job_id: str) -> JobResponse:
         # no reason, and it is already at /api/sessions/{id}, which the client
         # should call once, on success.
         result=job.result,
+    )
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str) -> StreamingResponse:
+    """Push a job's outcome instead of making the client ask for it.
+
+    Polling costs the interactive steps something the pipeline steps do not pay:
+    a person waiting twenty seconds for an answer waits up to the poll interval
+    longer, for no benefit to them. This removes that. The client opens one
+    connection and the answer arrives the moment it exists.
+
+    **What this is not.** The engines are batch internally -- `multi_chat.chat`
+    runs a five-model panel and returns when the last one is done, and nothing
+    above the LLM client calls its `stream()`. So this streams *events about a
+    job*, not tokens of an answer. Token streaming would mean threading a
+    callback through the engines, and for multi-chat it would help only at the
+    very end, since the final answer is synthesised after the panel finishes.
+
+    **It does not replace polling behind a proxy.** A function timeout applies
+    to a streamed response as much as a buffered one -- Netlify caps a function
+    invocation at 26 seconds however its body is produced -- so an answer that
+    takes a minute dies mid-stream there. Through the proxy, `GET /api/jobs/{id}`
+    remains the path that works. This route is for clients that talk to the
+    backend directly.
+    """
+
+    job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such job")
+
+    async def events() -> AsyncIterator[str]:
+        # The current state first, before any waiting: a client that connects
+        # after the job finished must still be told, or it waits forever for an
+        # event that has already happened.
+        yield _sse("state", job.snapshot())
+
+        while not job.done:
+            # In a thread, because Job.wait blocks. Awaiting it directly would
+            # stall the event loop and every other request with it.
+            finished = await asyncio.to_thread(job.wait, _SSE_HEARTBEAT_SECONDS)
+            if not finished:
+                # Proxies and load balancers close connections that go quiet.
+                # A comment frame is the SSE convention for "still here"; it is
+                # ignored by the client rather than delivered as an event.
+                yield ": heartbeat\n\n"
+
+        yield _sse("done", job.snapshot())
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Nginx and several CDNs buffer proxied responses by default, which
+            # would hold every event until the stream closed and defeat the
+            # entire point.
+            "X-Accel-Buffering": "no",
+        },
     )

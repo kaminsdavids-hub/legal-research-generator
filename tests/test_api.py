@@ -917,3 +917,106 @@ def test_socratic_runs_as_a_job_and_returns_its_own_response(client: TestClient)
     assert body["state"] == "succeeded", body["error"]
     assert body["result"]["section_id"] == section_id
     assert body["result"]["applied"] is False
+
+
+# --------------------------------------------------------------------------- #
+# Pushing a job's outcome instead of making the client ask
+# --------------------------------------------------------------------------- #
+def _sse_events(body: str) -> list[tuple[str, dict]]:
+    """Parse an SSE body into (event, data). Comment frames are skipped, which
+    is what a real client does with a heartbeat."""
+
+    import json as _json
+
+    out = []
+    for block in body.split("\n\n"):
+        lines = [ln for ln in block.splitlines() if ln and not ln.startswith(":")]
+        if not lines:
+            continue
+        event = next((ln[len("event: ") :] for ln in lines if ln.startswith("event: ")), "")
+        data = next((ln[len("data: ") :] for ln in lines if ln.startswith("data: ")), "")
+        if event and data:
+            out.append((event, _json.loads(data)))
+    return out
+
+
+def test_the_stream_reports_a_job_that_already_finished(client: TestClient) -> None:
+    """State first, before any waiting. A client that connects after the job
+    ended must still be told, or it waits forever for an event that has already
+    happened."""
+
+    from legal_research.api.app import _jobs
+
+    job = _jobs.submit("stream-session", "ideate", lambda: {"ok": True})
+    assert job.wait(timeout=30)
+
+    with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        events = _sse_events("".join(resp.iter_text()))
+
+    assert [name for name, _ in events] == ["state", "done"]
+    assert events[-1][1]["state"] == "succeeded"
+    assert events[-1][1]["result"] == {"ok": True}
+
+
+def test_the_stream_delivers_a_result_the_client_never_asked_twice_for(
+    client: TestClient,
+) -> None:
+    """The point of the route: one connection, and the answer arrives the moment
+    it exists rather than at the next poll."""
+
+    import threading
+
+    from legal_research.api.app import _jobs
+
+    release = threading.Event()
+    job = _jobs.submit("stream-session-2", "multi-chat", lambda: release.wait() or {"answer": "x"},
+                       mutates=False)
+    threading.Timer(0.3, release.set).start()
+
+    with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
+        events = _sse_events("".join(resp.iter_text()))
+
+    assert events[0][1]["state"] == "running"
+    assert events[-1][0] == "done"
+    assert events[-1][1]["state"] == "succeeded"
+
+
+def test_a_failure_arrives_on_the_stream_too(client: TestClient) -> None:
+    """A stream that ended silently would leave the client unable to tell a
+    failure from a dropped connection."""
+
+    from legal_research.api.app import _jobs
+
+    def boom() -> None:
+        raise RuntimeError("panel unreachable")
+
+    job = _jobs.submit("stream-session-3", "dialectic", boom, mutates=False)
+    assert job.wait(timeout=30)
+
+    with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
+        events = _sse_events("".join(resp.iter_text()))
+
+    assert events[-1][1]["state"] == "failed"
+    assert "panel unreachable" in events[-1][1]["error"]
+
+
+def test_the_stream_and_the_poll_describe_a_job_identically(client: TestClient) -> None:
+    """One definition of what a client is told, so the two routes cannot drift
+    into describing the same job differently."""
+
+    from legal_research.api.app import _jobs
+
+    job = _jobs.submit("stream-session-4", "ideate", lambda: {"ok": 1})
+    assert job.wait(timeout=30)
+
+    polled = client.get(f"/api/jobs/{job.id}").json()
+    with client.stream("GET", f"/api/jobs/{job.id}/events") as resp:
+        streamed = _sse_events("".join(resp.iter_text()))[-1][1]
+
+    assert polled == streamed
+
+
+def test_streaming_an_unknown_job_is_404(client: TestClient) -> None:
+    assert client.get("/api/jobs/nope/events").status_code == 404

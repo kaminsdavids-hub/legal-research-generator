@@ -244,12 +244,7 @@ export async function runAll(
   });
   onState?.(started.state);
 
-  let status = started;
-  while (status.state === "running") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
-    onState?.(status.state);
-  }
+  const status = await awaitJob(started.job_id, onState);
   if (status.state === "failed") throw new Error(`run-all failed: ${status.error}`);
 
   return {
@@ -277,12 +272,7 @@ export async function askAsJob<T>(
   });
   onState?.(started.state);
 
-  let status = started;
-  while (status.state === "running") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
-    onState?.(status.state);
-  }
+  const status = await awaitJob(started.job_id, onState);
   if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
   return status.result as unknown as T;
 }
@@ -314,14 +304,77 @@ export async function socraticAsJob(
   });
   onState?.(started.state);
 
-  let status = started;
-  while (status.state === "running") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
-    onState?.(status.state);
-  }
+  const status = await awaitJob(started.job_id, onState);
   if (status.state === "failed") throw new Error(`socratic failed: ${status.error}`);
   return status.result as unknown as SocraticReviseResponse;
+}
+
+/** Wait for a job by holding one connection open instead of asking repeatedly.
+ *
+ *  `fetch`, not `EventSource`: EventSource cannot set request headers, so it
+ *  could not send the proxy password. The trade is that reconnection is not
+ *  automatic — `awaitJob` falls back to polling if the stream drops, which is
+ *  also what makes it safe to use behind a proxy that may cut it short.
+ *
+ *  Note what this does not stream. The engines are batch internally, so these
+ *  are events about a job, not tokens of an answer; the payload arrives whole
+ *  when the step finishes. */
+async function streamJob(jobId: string, onState?: (state: JobState) => void): Promise<JobStatus> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/events`, { headers: authHeaders() });
+  if (res.status === 401) throw new UnauthorizedError();
+  if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) throw new Error("stream ended without a terminal event");
+    buffer += decoder.decode(value, { stream: true });
+
+    let split: number;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      // A comment frame is the heartbeat; a client ignores it.
+      if (frame.startsWith(":")) continue;
+      const event = /^event: (.*)$/m.exec(frame)?.[1];
+      const data = /^data: (.*)$/m.exec(frame)?.[1];
+      if (!event || !data) continue;
+      const status = JSON.parse(data) as JobStatus;
+      onState?.(status.state);
+      if (event === "done") {
+        void reader.cancel();
+        return status;
+      }
+    }
+  }
+}
+
+/** Wait for a job: stream if we can, poll if the stream is unavailable.
+ *
+ *  The fallback is not defensive padding. A proxy with a function timeout will
+ *  cut a long stream mid-flight, and polling is the path that survives that —
+ *  so the fast path is tried first and the durable one is always there. */
+export async function awaitJob(
+  jobId: string,
+  onState?: (state: JobState) => void,
+  intervalMs = 2000
+): Promise<JobStatus> {
+  try {
+    return await streamJob(jobId, onState);
+  } catch (err) {
+    if (err instanceof UnauthorizedError) throw err;
+    let status = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
+    onState?.(status.state);
+    while (status.state === "running") {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      status = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
+      onState?.(status.state);
+    }
+    return status;
+  }
 }
 
 /** Submit a step and resolve when it finishes, or reject with what went wrong.
@@ -344,14 +397,8 @@ export async function runStep(
   });
   onState?.(started.state);
 
-  let state = started.state;
-  while (state === "running") {
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    const status = await jsonFetch<JobStatus>(`/api/jobs/${started.job_id}`);
-    state = status.state;
-    onState?.(state);
-    if (state === "failed") throw new Error(`${step} failed: ${status.error}`);
-  }
+  const status = await awaitJob(started.job_id, onState, intervalMs);
+  if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
   // Fetched once, on success. The poll deliberately does not carry the
   // blackboard: it is large, and a poller would re-download it every 2s.
   return jsonFetch<Blackboard>(`/api/sessions/${sessionId}`);
