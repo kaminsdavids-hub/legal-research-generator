@@ -1641,3 +1641,36 @@ def test_a_caller_that_supplies_no_recipe_is_told_the_stamp_is_incomplete(
     # And what it can name, it does.
     assert "--realism-weight" in plain.stamp.recipe
     assert "--descriptors actor_type capability_tier" in plain.stamp.recipe
+
+
+def test_every_coded_case_has_a_review_or_says_why_not() -> None:
+    """A coding nobody can check is a coding nobody will check. Each judicial
+    record ships the evidence for its axes; the two regulatory instruments do
+    not, because CAP holds cases and not the Federal Register, and the index
+    says so rather than leaving the gap silent."""
+
+    from pathlib import Path
+
+    from modules.casework.corpus import load_cases
+
+    reviews = {p.stem for p in Path("data/reviews").glob("*.md")} - {"README"}
+    cases = load_cases("data/cases.yaml").cases
+    judicial = {c.id for c in cases if c.citation_source.startswith("cap")}
+    instruments = {c.id for c in cases if not c.citation_source.startswith("cap")}
+
+    assert judicial == reviews
+    index = Path("data/reviews/README.md").read_text(encoding="utf-8")
+    for case_id in instruments:
+        assert case_id in index
+
+
+def test_no_review_claims_the_coding_is_verified() -> None:
+    """Reading an opinion with a model is not the human confirmation the flag
+    asserts, and a review that blurred that would defeat the gate it documents."""
+
+    from pathlib import Path
+
+    for path in Path("data/reviews").glob("*.md"):
+        if path.stem == "README":
+            continue
+        assert "still `model_draft`" in path.read_text(encoding="utf-8"), path
