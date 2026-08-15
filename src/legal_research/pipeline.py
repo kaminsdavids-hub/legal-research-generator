@@ -9,7 +9,9 @@ format -> novelty -> document/PDF. Operates on a caller-supplied
 
 from __future__ import annotations
 
+import contextlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -348,7 +350,16 @@ class LegalResearchPipeline:
         title: str = "Untitled Research Paper",
         max_ideas: int = 3,
         bb: Blackboard | None = None,
+        on_event: Callable[[dict[str, object]], None] | None = None,
     ) -> PipelineResult:
+        """Run every stage in order and return the blackboard with a step log.
+
+        ``on_event`` reports each stage as it completes. This method calls nine
+        agents in sequence and can run for minutes; without it a caller sees
+        nothing until the whole thing is done, which for the slowest route in
+        the application is the longest silence in it.
+        """
+
         if bb is None:
             bb = self.new_session(title)
         else:
@@ -356,10 +367,38 @@ class LegalResearchPipeline:
         if raw_idea.strip() and not bb.thesis:
             bb.thesis = raw_idea.strip()
         steps: list[AgentResult] = []
+
+        def record(result: AgentResult) -> None:
+            """Append a completed stage and report it.
+
+            Every stage in this method goes through here, including the degraded
+            fallbacks -- a run where six of nine agents fell back is exactly the
+            run a caller most needs to see happening, and reporting only the
+            healthy path would make a limping run look like a fast one.
+            """
+
+            steps.append(result)
+            if on_event is None:
+                return
+            with contextlib.suppress(Exception):
+                on_event(
+                    {
+                        "event": "step_completed",
+                        "index": len(steps),
+                        "agent": result.agent,
+                        "summary": result.summary,
+                        # `_degraded_step` marks its payload; a stage that fell
+                        # back is not the same event as one that succeeded, and
+                        # a progress display that conflated them would report
+                        # steady progress through a collapsing run.
+                        "degraded": bool(result.payload.get("degraded")),
+                    }
+                )
+
         try:
-            steps.append(self.brainstorm(bb, scholar_input=raw_idea))
+            record(self.brainstorm(bb, scholar_input=raw_idea))
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.interviewer.name,
                     "brainstorm unavailable; seeded thesis from scholar prompt and continued",
@@ -370,9 +409,9 @@ class LegalResearchPipeline:
                 bb.thesis = raw_idea.strip() or "Untitled legal issue"
 
         try:
-            steps.append(self.ideate(bb, seed=raw_idea))
+            record(self.ideate(bb, seed=raw_idea))
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.ideator.name,
                     "ideation unavailable; switched to deterministic fallback ideas",
@@ -382,7 +421,7 @@ class LegalResearchPipeline:
 
         if not bb.ideas:
             created = self._seed_fallback_ideas(bb, raw_idea, max_ideas)
-            steps.append(
+            record(
                 self._degraded_step(
                     self.ideator.name,
                     f"generated {created} deterministic fallback ideas",
@@ -400,7 +439,7 @@ class LegalResearchPipeline:
                 bb,
                 [(idea.id, i) for i, idea in enumerate(bb.ideas[: max(1, int(max_ideas))])],
             )
-            steps.append(
+            record(
                 self._degraded_step(
                     self.ideator.name,
                     f"generated {created} deterministic fallback ideas for selection",
@@ -409,9 +448,9 @@ class LegalResearchPipeline:
             )
 
         try:
-            steps.append(self.build_outline(bb))
+            record(self.build_outline(bb))
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.architect.name,
                     "outline generation unavailable; created minimal fallback outline",
@@ -420,7 +459,7 @@ class LegalResearchPipeline:
             )
         if not bb.outline:
             created = self._ensure_minimal_outline(bb)
-            steps.append(
+            record(
                 self._degraded_step(
                     self.architect.name,
                     f"created minimal fallback outline with {created} sections",
@@ -429,9 +468,9 @@ class LegalResearchPipeline:
             )
 
         try:
-            steps.append(self.runtime.run(self.legal_researcher, self.context(bb)))
+            record(self.runtime.run(self.legal_researcher, self.context(bb)))
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.legal_researcher.name,
                     "legal research unavailable; continued with available doctrinal context",
@@ -439,9 +478,9 @@ class LegalResearchPipeline:
                 )
             )
         try:
-            steps.append(self.runtime.run(self.finance_analyst, self.context(bb)))
+            record(self.runtime.run(self.finance_analyst, self.context(bb)))
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.finance_analyst.name,
                     "finance analysis unavailable; continued without supplemental finance notes",
@@ -451,10 +490,10 @@ class LegalResearchPipeline:
 
         draft_failed = False
         try:
-            steps.append(self.draft(bb))
+            record(self.draft(bb))
         except Exception:
             draft_failed = True
-            steps.append(
+            record(
                 self._degraded_step(
                     self.writer.name,
                     "draft generation unavailable; switched to deterministic manuscript fallback",
@@ -464,7 +503,7 @@ class LegalResearchPipeline:
 
         if draft_failed or not any(section.content.strip() for section in bb.outline):
             drafted = self._ensure_fallback_draft(bb, raw_idea)
-            steps.append(
+            record(
                 self._degraded_step(
                     self.writer.name,
                     f"produced deterministic fallback prose for {drafted} sections",
@@ -473,9 +512,9 @@ class LegalResearchPipeline:
             )
 
         try:
-            steps.append(self.edit_voice(bb))  # voice pass before citations are formatted
+            record(self.edit_voice(bb))  # voice pass before citations are formatted
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.editor.name,
                     "voice pass unavailable; preserved draft prose",
@@ -483,9 +522,9 @@ class LegalResearchPipeline:
                 )
             )
         try:
-            steps.append(self.mechanism_gate(bb))  # no argument may rest on an unstated operation
+            record(self.mechanism_gate(bb))  # no argument may rest on an unstated operation
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     "Mechanism Gate",
                     "mechanism gate unavailable; prose was not scanned for unstated operations",
@@ -493,9 +532,9 @@ class LegalResearchPipeline:
                 )
             )
         try:
-            steps.append(self.verify(bb))  # gatekeeper: removes unverifiable cites
+            record(self.verify(bb))  # gatekeeper: removes unverifiable cites
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.verifier_agent.name,
                     "verification unavailable; preserved manuscript and marked run as degraded",
@@ -503,9 +542,9 @@ class LegalResearchPipeline:
                 )
             )
         try:
-            steps.append(self.format_citations(bb))  # strips removed cites, numbers footnotes
+            record(self.format_citations(bb))  # strips removed cites, numbers footnotes
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     self.citation_formatter.name,
                     "citation formatting unavailable; preserved inline draft text",
@@ -516,7 +555,7 @@ class LegalResearchPipeline:
         try:
             self.assess_novelty(bb)
         except Exception:
-            steps.append(
+            record(
                 self._degraded_step(
                     "Novelty Assessor",
                     "novelty scoring unavailable; manuscript generation still completed",

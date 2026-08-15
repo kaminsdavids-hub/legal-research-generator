@@ -1205,3 +1205,67 @@ def test_a_hostile_subscriber_cannot_break_a_dialectic_turn() -> None:
     turn = _get_dialectic().chat("does the EAR reach open weights?", on_event=hostile)
 
     assert turn.question
+
+
+def test_run_all_reports_every_stage_including_the_fallbacks(client: TestClient) -> None:
+    """The longest silence in the application: nine agents in sequence, minutes
+    of work, nothing until the end. Degraded stages are reported too — a run
+    where most agents fell back is exactly the run a caller needs to see, and
+    reporting only the healthy path would make a limping run look like a fast
+    one."""
+
+    from legal_research.api.app import _jobs
+
+    session = client.post("/api/sessions", json={"title": "instrumented"}).json()
+    job_id = client.post(
+        f"/api/sessions/{session['session_id']}/jobs",
+        json={"step": "run-all", "idea": "open weights and the EAR", "title": "instrumented"},
+    ).json()["job_id"]
+    assert _jobs.get(job_id).wait(timeout=300)
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+    assert body["state"] == "succeeded", body["error"]
+    events = body["events"]
+
+    assert events, "run-all reported nothing"
+    assert all(e["event"] == "step_completed" for e in events)
+    # One event per step in the summary, in the same order, no more and no less.
+    assert [e["agent"] for e in events] == [s["agent"] for s in body["result"]["steps"]]
+    # Index is 1-based and monotonic, so a display can show "step 4 of n".
+    assert [e["index"] for e in events] == list(range(1, len(events) + 1))
+    assert all(isinstance(e["degraded"], bool) for e in events)
+
+
+def test_a_degraded_stage_is_marked_as_such(client: TestClient) -> None:
+    """`_degraded_step` marks its payload, and the flag travels. A progress
+    display that conflated a fallback with a success would report steady
+    progress through a collapsing run."""
+
+    from legal_research.config import Settings
+    from legal_research.pipeline import LegalResearchPipeline
+
+    pipe = LegalResearchPipeline(Settings(llm_mode="mock", retriever_mode="mock"))
+    seen: list[dict] = []
+
+    # Force the first stage to fall back.
+    pipe.brainstorm = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down"))  # type: ignore[method-assign]
+    pipe.run_all("open weights", title="degraded", bb=pipe.new_session("degraded"), on_event=seen.append)
+
+    assert seen[0]["degraded"] is True
+    assert any(e["degraded"] is False for e in seen), "later stages still succeeded"
+
+
+def test_a_hostile_subscriber_cannot_break_a_run() -> None:
+    """Third time this discipline appears; it holds here too."""
+
+    from legal_research.config import Settings
+    from legal_research.pipeline import LegalResearchPipeline
+
+    pipe = LegalResearchPipeline(Settings(llm_mode="mock", retriever_mode="mock"))
+
+    def hostile(_event: dict) -> None:
+        raise RuntimeError("subscriber exploded")
+
+    result = pipe.run_all("open weights", title="hostile", bb=pipe.new_session("hostile"), on_event=hostile)
+
+    assert result.steps, "the run completed despite the callback"

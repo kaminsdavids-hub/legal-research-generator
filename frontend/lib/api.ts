@@ -217,7 +217,12 @@ export interface JobStatus {
  *  `dialectic` reports a sequence instead: `generating` and `position_generated`
  *  per side, then `retrieved`, `verified`, `cruxes_extracted`, `synthesising`.
  *  Its stages are heterogeneous — a model call, a network round-trip, an NLI
- *  pass — so the stage name is the useful part, not the timing. */
+ *  pass — so the stage name is the useful part, not the timing.
+ *
+ *  `run-all` reports `step_completed` per agent, with a 1-based `index` so a
+ *  display can show "step 4 of n", and `degraded` set when that stage fell back
+ *  rather than succeeding. A run where most agents fell back is exactly the run
+ *  worth watching, so do not filter those out. */
 export interface JobEvent {
   event: string;
   /** multi-chat */
@@ -228,6 +233,10 @@ export interface JobEvent {
   answered?: boolean;
   models?: string[];
   answers?: number;
+  /** run-all */
+  index?: number;
+  agent?: string;
+  degraded?: boolean;
   /** dialectic */
   side?: "thesis" | "antithesis";
   propositions?: number;
@@ -268,7 +277,8 @@ export async function runAll(
   sessionId: string,
   idea: string,
   title: string,
-  onState?: (state: JobState) => void
+  onState?: (state: JobState) => void,
+  onProgress?: (event: JobEvent) => void
 ): Promise<{ blackboard: Blackboard; summary: RunAllSummary }> {
   const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
     method: "POST",
@@ -276,7 +286,7 @@ export async function runAll(
   });
   onState?.(started.state);
 
-  const status = await awaitJob(started.job_id, onState);
+  const status = await awaitJob(started.job_id, onState, 2000, onProgress);
   if (status.state === "failed") throw new Error(`run-all failed: ${status.error}`);
 
   return {

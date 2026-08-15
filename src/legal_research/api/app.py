@@ -481,6 +481,8 @@ def run_all(session_id: str, req: RunAllRequest) -> RunAllResponse:
     bb = _get(session_id)
     bb.title = req.title
     try:
+        # No on_event: this route returns once, at the end, so it has nowhere to
+        # put progress and the pipeline skips reporting entirely.
         result = pipeline.run_all(req.idea, title=req.title, max_ideas=req.max_ideas, bb=bb)
     except Exception as exc:
         raise HTTPException(
@@ -671,7 +673,9 @@ def _dialectic_work(req: JobRequest, job: Job | None = None) -> dict[str, object
     return dict(_dialectic_response(turn).model_dump())
 
 
-def _run_all_work(session_id: str, bb: Blackboard, req: JobRequest) -> dict[str, object]:
+def _run_all_work(
+    session_id: str, bb: Blackboard, req: JobRequest, job: Job | None = None
+) -> dict[str, object]:
     """Run the full pipeline and return the summary the blackboard cannot carry.
 
     `pipeline.run_all` mutates `bb` in place and has its own per-stage fallbacks,
@@ -682,7 +686,13 @@ def _run_all_work(session_id: str, bb: Blackboard, req: JobRequest) -> dict[str,
     """
 
     bb.title = req.title
-    result = pipeline.run_all(req.idea, title=req.title, max_ideas=req.max_ideas, bb=bb)
+    result = pipeline.run_all(
+        req.idea,
+        title=req.title,
+        max_ideas=req.max_ideas,
+        bb=bb,
+        on_event=job.emit if job is not None else None,
+    )
     result.blackboard.session_id = session_id
     _sessions[session_id] = result.blackboard
     return {
@@ -713,7 +723,7 @@ def submit_job(session_id: str, req: JobRequest) -> JobResponse:
         raise HTTPException(status_code=404, detail=f"no such section: {req.section_id!r}")
 
     if req.step == RUN_ALL:
-        task: Callable[[Job], object] = lambda _job: _run_all_work(session_id, bb, req)  # noqa: E731
+        task: Callable[[Job], object] = lambda job: _run_all_work(session_id, bb, req, job)  # noqa: E731
     elif req.step == "multi-chat":
         task = lambda job: _multi_chat_work(req, job)  # noqa: E731
     elif req.step == "dialectic":

@@ -245,6 +245,13 @@ count of zero along with the engine's note explaining why, because an empty crux
 table is a real outcome and reporting nothing would look like a stage that never
 ran.
 
+`run-all` reports `step_completed` per agent, with a 1-based `index` so a
+display can show "step 4 of n" and a `degraded` flag set when that stage fell
+back rather than succeeding. Every stage goes through the same recorder,
+fallbacks included: a run where six of nine agents fell back is exactly the run
+a caller most needs to see happening, and reporting only the healthy path would
+make a limping run look like a fast one. Do not filter those events out.
+
 Progress is carried on the poll as well as the stream, so falling back to
 polling costs the immediacy and not the information.
 
