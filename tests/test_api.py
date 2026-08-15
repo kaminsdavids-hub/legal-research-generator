@@ -455,3 +455,111 @@ def test_retrieval_smoke_endpoint_enabled(monkeypatch) -> None:
 
 def test_unknown_session_404(client: TestClient) -> None:
     assert client.get("/api/sessions/does-not-exist").status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# The API key gate
+# --------------------------------------------------------------------------- #
+def _keyed_client(monkeypatch, key: str = "s3cret-for-tests") -> tuple[TestClient, str]:
+    """A client against an app configured with a key.
+
+    The middleware is bound when `app.py` is imported, so the setting has to be
+    in place before the module object exists — hence the reload rather than
+    patching an attribute afterwards. Testing the gate any other way would test
+    a wiring the process never actually uses.
+    """
+
+    import importlib
+    import sys
+
+    monkeypatch.setenv("LRG_LLM_MODE", "mock")
+    monkeypatch.setenv("LRG_RETRIEVER_MODE", "mock")
+    monkeypatch.setenv("LRG_API_KEY", key)
+    from legal_research.config import reset_settings
+
+    reset_settings()
+    # sys.modules, not `import ... as`: the package re-exports the FastAPI
+    # instance as `legal_research.api.app`, so the dotted name resolves to the
+    # object rather than the module and reload() gets handed an app.
+    import legal_research.api.app  # noqa: F401  (ensures it is in sys.modules)
+
+    app_module = importlib.reload(sys.modules["legal_research.api.app"])
+    return TestClient(app_module.app), key
+
+
+def test_an_unkeyed_request_is_refused(monkeypatch) -> None:
+    """Every /api route was open to anyone who could reach the host. The gate is
+    the thing that stopped being true."""
+
+    client, _ = _keyed_client(monkeypatch)
+
+    resp = client.post("/api/sessions", json={"topic": "probe"})
+
+    assert resp.status_code == 401
+    assert resp.headers["www-authenticate"] == "Bearer"
+
+
+def test_both_header_forms_are_accepted(monkeypatch) -> None:
+    """Bearer is what proxies already send; X-API-Key is what people paste. The
+    alternative to accepting the second is that they put the key in a query
+    string, where it lands in every access log."""
+
+    client, key = _keyed_client(monkeypatch)
+
+    assert client.get("/api/config", headers={"Authorization": f"Bearer {key}"}).status_code == 200
+    assert client.get("/api/config", headers={"X-API-Key": key}).status_code == 200
+    assert client.get("/api/config", headers={"X-API-Key": "wrong"}).status_code == 401
+    # A bare token with no scheme is not a Bearer credential.
+    assert client.get("/api/config", headers={"Authorization": key}).status_code == 401
+
+
+def test_health_answers_without_a_key_but_config_does_not(monkeypatch) -> None:
+    """A liveness probe that needs a secret is one nobody wires up. /api/config
+    is not in the same class: it lists every model the host is running."""
+
+    client, key = _keyed_client(monkeypatch)
+
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/config").status_code == 401
+
+
+def test_cors_preflight_is_not_gated(monkeypatch) -> None:
+    """Browsers send preflight without credentials by design. Gating OPTIONS
+    would surface a missing key as an opaque CORS error instead of a 401."""
+
+    client, _ = _keyed_client(monkeypatch)
+
+    resp = client.options(
+        "/api/sessions",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert resp.status_code < 400
+
+
+def test_an_empty_key_leaves_the_api_open(monkeypatch) -> None:
+    """Off by default, because a mandatory secret on a loopback dev server is
+    friction with no benefit. The startup warning is what keeps it from being a
+    silent choice."""
+
+    client, _ = _keyed_client(monkeypatch, key="")
+
+    assert client.get("/api/config").status_code == 200
+
+
+def test_the_startup_warning_fires_only_where_it_matters() -> None:
+    """Binding to loopback is not proof of safety — a Funnel or reverse proxy
+    publishes a localhost port to the internet, which is exactly how this API
+    came to be publicly reachable. The check catches the obvious case and its
+    docstring admits the rest."""
+
+    from legal_research.api.auth import warn_if_unprotected
+
+    said: list[str] = []
+    assert warn_if_unprotected("0.0.0.0", "", said.append) is True
+    assert "LRG_API_KEY" in said[0]
+    assert warn_if_unprotected("0.0.0.0", "a-key", said.append) is False
+    assert warn_if_unprotected("127.0.0.1", "", said.append) is False

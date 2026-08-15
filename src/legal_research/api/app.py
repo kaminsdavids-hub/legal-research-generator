@@ -20,6 +20,7 @@ from ..config import get_settings
 from ..multi_chat import MultiChatTurn as MultiChatEngineTurn
 from ..multi_chat import MultiModelChat
 from ..pipeline import LegalResearchPipeline
+from .auth import ApiKeyMiddleware, warn_if_unprotected
 from .schemas import (
     BrainstormRequest,
     ConfigResponse,
@@ -46,6 +47,9 @@ from .schemas import (
 app = FastAPI(title="legal research generator", version="0.1.0")
 
 _settings = get_settings()
+# Added before CORS, so CORS ends up outermost and still answers preflight;
+# the gate exempts OPTIONS for the same reason.
+app.add_middleware(ApiKeyMiddleware, key=_settings.api_key)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_settings.cors_origins,
@@ -503,6 +507,7 @@ def main() -> None:
     import uvicorn
 
     s = get_settings()
+    warn_if_unprotected(s.host, s.api_key)
     uvicorn.run("legal_research.api.app:app", host=s.host, port=s.port, reload=False)
 
 

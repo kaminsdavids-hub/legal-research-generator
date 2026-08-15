@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     port: int = 8000
     debug_endpoints_enabled: bool = False
 
+    #: Shared secret required on every /api route except /api/health. Empty
+    #: disables the gate, which is right for a loopback dev server and wrong
+    #: for anything reachable; `auth.warn_if_unprotected` makes that choice
+    #: visible at startup rather than silent.
+    api_key: str = ""
+
     # "mock" | "openai"
     llm_mode: str = "openai"
     llm_api_key: str = "local-not-secret"
