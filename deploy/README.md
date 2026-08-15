@@ -128,3 +128,58 @@ detected resource limit, not a script bug.
   `AgentRuntime` interface; both drive the same nine agents.
 - Everything degrades gracefully: with no GPU/models, set `LRG_LLM_MODE=mock` and
   `LRG_RETRIEVER_MODE=mock` and the full pipeline still runs deterministically.
+
+
+## Deploying the frontend on Netlify
+
+The Next.js app is a static export on Netlify; `/api/*` is served by
+`netlify/functions/api-proxy.mts`, which holds the backend key server-side so it
+never reaches the browser. Configuration lives in `netlify.toml`; the secrets go
+in the Netlify UI, never in the repo:
+
+| variable | what it is |
+| --- | --- |
+| `BACKEND_URL` | `https://host:port` of this backend, routable **from Netlify's servers** |
+| `BACKEND_API_KEY` | the backend's `LRG_API_KEY`. Server-side only — never `NEXT_PUBLIC_*` |
+| `PROXY_PASSWORD` | what a caller must send as `X-Proxy-Password` |
+| `PROXY_ALLOW_PUBLIC` | `true` only if the site is gated some other way |
+
+Two secrets, deliberately. The proxy password authorises calls to the proxy and
+can be rotated without touching the host; the backend key authorises calls to
+the host and never leaves Netlify's environment. A proxy that attached the key
+to anonymous requests would not secure the backend, it would republish it at a
+new address, which is why the function returns 503 when neither
+`PROXY_PASSWORD` nor `PROXY_ALLOW_PUBLIC` is set.
+
+### The timeout, which decides how much of the app can use this
+
+Netlify synchronous functions cap at **10 seconds by default and 26 at most**.
+This backend's own budget is `LRG_LLM_TIMEOUT_SECONDS=300` and
+`LRG_MULTI_CHAT_MAX_LATENCY_SECONDS=260`. So the proxy is correct for the fast
+routes and cannot carry the slow ones, no matter how it is written:
+
+* **Works:** `/api/health`, `/api/config`, session create and read, `/report`,
+  `/preview`, `/ideas/select`.
+* **Will 502 on timeout:** `/run-all`, `/draft`, `/research`, `/verify`,
+  `/brainstorm`, `/ideate`, `/multi-chat`, `/dialectic`, `/revise`, `/novelty`.
+
+That is a platform limit, not a bug to fix here. The three ways out, in
+increasing order of work:
+
+1. **Keep the slow routes off the proxy.** Point them straight at the backend
+   and gate them with `LRG_API_KEY` in the browser — the design in
+   `frontend/lib/api.ts` before this change. Splits the credential story in two.
+2. **Make the slow routes asynchronous.** `POST` returns a job id immediately,
+   the client polls a fast status route. Every call through the proxy then fits
+   well inside the limit. This is the right answer and it is a backend change.
+3. **Do not use Netlify for the API.** Put the backend behind something without
+   a 26-second ceiling.
+
+### Reachability
+
+`BACKEND_URL` must resolve and route from Netlify's build and function
+infrastructure. A `*.ts.net` tailnet-only address does **not**: Netlify is not
+on your tailnet. Making the proxy work therefore means exposing the backend to
+the public internet again (Tailscale Funnel, or another ingress) — this time
+behind `LRG_API_KEY`, which is the point of the exercise. The function reports
+this case explicitly rather than returning a bare 502.

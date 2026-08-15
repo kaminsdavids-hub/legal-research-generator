@@ -1,55 +1,55 @@
 // Typed client for the Legal Research Generator backend.
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+// Same origin by default: `/api/*` is handled by the Netlify function that
+// holds the backend key. Set NEXT_PUBLIC_API_URL only for local development
+// against a backend running on this machine, where there is no proxy.
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 // --------------------------------------------------------------------------
-// The API key
+// Credentials
 //
-// The backend gates every /api route except /api/health on a shared key. This
-// bundle is static and served from a public URL, so the key must NOT be built
-// into it -- an NEXT_PUBLIC_* value is readable by anyone who opens dev tools,
-// which would make the gate decoration. The user supplies it once and the
-// browser keeps it.
+// The backend key is NOT here and must never be. It lives in the Netlify
+// function's environment (netlify/functions/api-proxy.mts), which runs on a
+// server; this bundle is public and anything compiled into it is readable.
 //
-// localStorage, not a cookie: nothing here is same-origin with the API, so a
-// cookie would have to be third-party and would be dropped by default in most
-// browsers. The tradeoff is that any script running on this origin can read the
-// key, which is the honest cost of a single-page app holding a credential at
-// all.
+// What the browser may hold is the proxy password, which is a different secret:
+// it authorises calls to the proxy, not to the backend, so it can be rotated
+// without touching the host and it confers no direct access to it. If the site
+// is gated another way -- Netlify site-level password protection, or an access
+// rule in front of it -- leave this unset and the prompt never appears.
 // --------------------------------------------------------------------------
 
-const KEY_STORAGE = "lrg.apiKey";
+const PASSWORD_STORAGE = "lrg.proxyPassword";
 
-export function getApiKey(): string {
+export function getProxyPassword(): string {
   if (typeof window === "undefined") return ""; // static export prerenders on the server
-  return window.localStorage.getItem(KEY_STORAGE) ?? "";
+  return window.localStorage.getItem(PASSWORD_STORAGE) ?? "";
 }
 
-export function setApiKey(key: string): void {
+export function setProxyPassword(password: string): void {
   if (typeof window === "undefined") return;
-  const trimmed = key.trim();
-  if (trimmed) window.localStorage.setItem(KEY_STORAGE, trimmed);
-  else window.localStorage.removeItem(KEY_STORAGE);
+  const trimmed = password.trim();
+  if (trimmed) window.localStorage.setItem(PASSWORD_STORAGE, trimmed);
+  else window.localStorage.removeItem(PASSWORD_STORAGE);
 }
 
-export function clearApiKey(): void {
-  setApiKey("");
+export function clearProxyPassword(): void {
+  setProxyPassword("");
 }
 
-/** A 401 from the backend. Distinct so the UI can ask for a key rather than
- *  showing a generic failure -- "unauthorized" and "the server is down" call
- *  for completely different things from the user. */
+/** A 401. Distinct so the UI can ask for the password rather than showing a
+ *  generic failure -- "unauthorized" and "the server is down" call for
+ *  completely different things from the user. */
 export class UnauthorizedError extends Error {
-  constructor(message = "missing or invalid API key") {
+  constructor(message = "missing or invalid proxy password") {
     super(message);
     this.name = "UnauthorizedError";
   }
 }
 
 function authHeaders(): Record<string, string> {
-  const key = getApiKey();
-  return key ? { "X-API-Key": key } : {};
+  const password = getProxyPassword();
+  return password ? { "X-Proxy-Password": password } : {};
 }
 
 export type IdeaStatus = "proposed" | "keep" | "cut";

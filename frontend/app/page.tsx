@@ -20,7 +20,7 @@ import { ManuscriptPanel } from "@/components/ManuscriptPanel";
 import { Button } from "@/components/ui";
 import {
   api,
-  setApiKey,
+  setProxyPassword,
   UnauthorizedError,
   type AppConfig,
   type Blackboard,
@@ -135,25 +135,26 @@ export default function Home() {
           className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
           onSubmit={(e) => {
             e.preventDefault();
-            setApiKey(keyInput);
+            setProxyPassword(keyInput);
             setKeyInput("");
             void connect();
           }}
         >
           <div className="mb-1 flex items-center gap-2">
             <ScrollText className="text-accent" size={20} />
-            <h1 className="text-lg font-semibold text-slate-900">API key required</h1>
+            <h1 className="text-lg font-semibold text-slate-900">Password required</h1>
           </div>
           <p className="mb-4 text-sm text-slate-500">
-            This backend is gated. The key is stored in this browser only and sent as a
-            header; it is never built into the site.
+            This site proxies to a private backend. The password authorises the proxy — it
+            is not the backend&rsquo;s key, which stays on the server and never reaches
+            your browser.
           </p>
           <input
             autoFocus
             type="password"
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="LRG_API_KEY"
+            placeholder="PROXY_PASSWORD"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
           />
           <button
