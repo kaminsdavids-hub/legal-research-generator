@@ -313,6 +313,7 @@ def config() -> ConfigResponse:
             "nemotron": s.multi_chat_nemotron_model,
             "hermes3": s.multi_chat_hermes3_model,
         },
+        multi_chat_panel_members=list(s.multi_chat_panel_members),
         multi_chat_verifiers={
             "gemma3": s.multi_chat_verifier_gemma3_model,
             "saul": s.multi_chat_verifier_saul_model,

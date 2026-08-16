@@ -21,6 +21,11 @@ class ConfigResponse(BaseModel):
     hermes_model: str
     hermes3_model: str
     multi_chat_models: dict[str, str]
+    #: Which of ``multi_chat_models`` the panel actually queries. Every slot stays
+    #: configured and warmed whether or not it is a member, so the map alone says
+    #: nothing about who answers -- a client that reads the map as "the panel"
+    #: will name models that never speak.
+    multi_chat_panel_members: list[str] = Field(default_factory=list)
     multi_chat_verifiers: dict[str, str]
     dialectic_models: dict[str, str] = Field(default_factory=dict)
     grammar_chain_enabled: bool

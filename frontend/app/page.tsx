@@ -18,9 +18,11 @@ import { BrainstormPanel } from "@/components/BrainstormPanel";
 import { CitationsPanel } from "@/components/CitationsPanel";
 import { IdeaBoard } from "@/components/IdeaBoard";
 import { ManuscriptPanel } from "@/components/ManuscriptPanel";
+import { ModelJuryPanel } from "@/components/ModelJuryPanel";
 import { Button } from "@/components/ui";
 import {
   api,
+  askAsJob,
   runAll,
   runStep,
   setProxyPassword,
@@ -30,11 +32,12 @@ import {
   type AppConfig,
   type Blackboard,
   type IdeaStatus,
+  type MultiChatResponse,
   type SocraticReviseResponse,
   type SocraticTurn,
 } from "@/lib/api";
 
-type Tab = "manuscript" | "citations";
+type Tab = "manuscript" | "citations" | "jury";
 
 // Run as jobs, not through the synchronous routes: those hold a request open
 // for the whole step, which nothing in front of this app is willing to wait for.
@@ -385,7 +388,7 @@ export default function Home() {
 
         <div className="flex min-h-0 flex-col">
           <div className="mb-2 flex gap-1.5">
-            {(["manuscript", "citations"] as Tab[]).map((t) => (
+            {(["manuscript", "citations", "jury"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -410,8 +413,28 @@ export default function Home() {
                 }
                 onSocratic={socraticRevise}
               />
-            ) : (
+            ) : tab === "citations" ? (
               <CitationsPanel bb={bb} report={report} />
+            ) : (
+              <ModelJuryPanel
+                modelMap={config.multi_chat_models}
+                panelMembers={config.multi_chat_panel_members}
+                verifierMap={config.multi_chat_verifiers}
+                // As a job, not the synchronous route: the panel takes over two
+                // minutes on this hardware and no HTTP request should be held
+                // open that long. The progress callback is why the panel can
+                // name each model as it lands instead of showing a spinner.
+                onAsk={(message, history, onProgress) =>
+                  askAsJob<MultiChatResponse>(
+                    bb.session_id,
+                    "multi-chat",
+                    message,
+                    history,
+                    undefined,
+                    (event) => onProgress(describeEvent(event))
+                  )
+                }
+              />
             )}
           </div>
         </div>

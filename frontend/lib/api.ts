@@ -144,6 +144,73 @@ export interface AppConfig {
   manuscript_target_min_words: number;
   manuscript_target_max_words: number;
   disclaimer: string;
+  /** Every configured panel slot. NOT the panel: each slot stays configured and
+   * warmed whether or not it is queried, so rendering this as the lineup names
+   * models that never answer. Cross-reference multi_chat_panel_members. */
+  multi_chat_models: Record<string, string>;
+  /** The slots actually queried, in order. */
+  multi_chat_panel_members: string[];
+  multi_chat_verifiers: Record<string, string>;
+}
+
+export interface MultiChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface MultiChatModelAnswer {
+  model: string;
+  content: string;
+}
+
+export interface MultiChatVerifierResult {
+  model: string;
+  verdict: string;
+}
+
+export interface MultiChatCitationFinding {
+  citation: string;
+  kind: string;
+  status: "supported" | "unconfirmed" | "misattributed" | "not_in_corpus" | string;
+  detail: string;
+  record_id: string;
+  support: number;
+}
+
+export interface MultiChatGrounding {
+  available: boolean;
+  summary: string;
+  note: string;
+  authorities: string[];
+  findings: MultiChatCitationFinding[];
+  verified_count: number;
+  unverified_count: number;
+  unconfirmed_count: number;
+}
+
+export interface MultiChatResponse {
+  final_answer: string;
+  model_answers: MultiChatModelAnswer[];
+  verifiers: MultiChatVerifierResult[];
+  grounding?: MultiChatGrounding;
+}
+
+/** Whether a panel slot holds a real answer rather than a substitute.
+ *
+ * Mirrors MultiModelChat.answered on the backend, which exists because
+ * reporting a substitution as an answer makes a panel where everything failed
+ * look like a panel where everything worked. Keep the prefixes in step with
+ * multi_chat.py; a substitute this does not recognise is worse than no check,
+ * because it renders as a genuine model opinion. */
+export function isRealAnswer(content: string): boolean {
+  const t = content.trim().toLowerCase();
+  if (!t) return false;
+  return !(
+    t.startsWith("degraded panel answer (") ||
+    t.startsWith("(skipped:") ||
+    t.startsWith("(no response") ||
+    t.startsWith("(unavailable:")
+  );
 }
 
 /** The five Socratic prompts the Editor knows. Kept in step with the backend's
