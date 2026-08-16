@@ -39,12 +39,14 @@ scripts/serve_models.sh
 
 ### Ollama server settings (the Model Jury's real constraint)
 
-The jury activates **seven models per query** — five panel members plus two
-verifiers. They must all be *co-resident*, or Ollama evicts and reloads models
+The jury activates **seven models per query** — five panel slots plus two
+verifiers. All seven are warmed regardless of how many the panel actually
+queries, so narrowing `LRG_MULTI_CHAT_PANEL_MEMBERS` does not reduce what must be
+resident. They must all be *co-resident*, or Ollama evicts and reloads models
 mid-query and charges that reload time to whichever models are still generating.
 This is not a disk question: on the Spark the seven weigh 52.8 GB against 121 GB
 of unified memory, so there is ample room, and the only thing standing between a
-three-model panel and a five-model panel is these two server settings.
+three-model panel and a four-model panel is these two server settings.
 
 Ollama's stock `OLLAMA_MAX_LOADED_MODELS` is **3**, which is far too low here.
 Set the drop-ins (`/etc/systemd/system/ollama.service.d/`), then reload:
@@ -86,10 +88,21 @@ Measured on this box (2026-08-16), five concurrent panel members, all resident:
 `hermes3` 25.3s, `apertus` 47.1s, `nemotron` 70.2s, `gemma4` 75.0s, `gpt-oss`
 80.9s — all inside the 110s per-model cap, whole exchange 139.5s. Before the
 change, under eviction, `gpt-oss` took 101s and `gemma4`/`nemotron` missed the
-cap entirely. If you deploy to a box with less unified memory, shrink
+cap entirely. Confirmed live as well: sampling `ollama ps` through a real HTTP
+jury request showed 7 resident in 31 of 40 samples, the remainder being warmup
+ramp rather than eviction.
+
+If you deploy to a box with less unified memory, shrink
 `LRG_MULTI_CHAT_PANEL_MEMBERS` rather than raising
 `LRG_MULTI_CHAT_PER_MODEL_TIMEOUT_SECONDS` — a model that times out is replaced
 with canned text, which is a worse answer than not asking it.
+
+**Clearing the cap is not the same as answering.** The shipped panel is four,
+not five: with all seven resident and no contention, `nemotron-3-nano:4b` still
+returned `Degraded panel answer (… low-substance rewrite fallback)` well inside
+the cap. That is a substance failure, and no amount of memory or timeout fixes
+it. When tuning a panel, read what the slots contain — the timings alone will
+tell you a canned answer arrived on schedule.
 
 ## 3. Point the backend at the local models
 

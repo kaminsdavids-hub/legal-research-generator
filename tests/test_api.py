@@ -1371,13 +1371,23 @@ def test_an_unknown_panel_member_raises_rather_than_being_skipped() -> None:
         empty._panel_specs()
 
 
-def test_the_shipped_panel_is_the_five_that_finish() -> None:
-    """Pinned to the measurement, re-taken 2026-08-16 after the Ollama server was
-    given MAX_LOADED_MODELS=8 and NUM_PARALLEL=1. All seven models (five panel,
-    two verifiers) now stay resident, so gemma4 and nemotron no longer lose their
-    bandwidth to the other three and both answer inside the 110s cap -- slowest
-    is gpt-oss at 80.9s. The reason the panel was three was eviction, not model
-    quality; if the panel regresses, shrink it back before raising the timeout."""
+def test_the_shipped_panel_is_the_four_that_answer() -> None:
+    """Pinned to the measurement, 2026-08-16, and to two different reasons.
+
+    gemma4 is in because it was only ever a latency casualty: with
+    MAX_LOADED_MODELS=8 and NUM_PARALLEL=1 all seven warmed models stay
+    resident, and it answers at 75.0s against a 110s cap.
+
+    nemotron is out because it is a substance casualty, which residency cannot
+    fix. Exercised through the API with all seven resident and no contention it
+    returned "Degraded panel answer (... low-substance rewrite fallback)" --
+    filler that never mentions the question's subject -- while comfortably
+    inside the cap. An earlier probe got a real answer from it, so it is
+    unreliable rather than uniformly bad, which is worse for a panel whose
+    value is independent reads.
+
+    So do not "fix" a regression here by raising the timeout: the model that
+    was dropped was never short of time."""
 
     from legal_research.config import Settings, reset_settings
 
@@ -1388,9 +1398,11 @@ def test_the_shipped_panel_is_the_five_that_finish() -> None:
         "gpt_oss",
         "gemma4",
         "apertus",
-        "nemotron",
         "hermes3",
     ]
+    # nemotron stays configured -- the module warms every panel slot regardless
+    # of membership, and the rescue and verifier paths still reach it.
+    assert settings.multi_chat_nemotron_model == "nemotron-3-nano:4b"
     # The margin is the point: 110s cleared the slowest by 29s. A timeout raised
     # to paper over a slow panel would silently reintroduce the canned-text
     # substitution this panel size was originally cut to avoid.

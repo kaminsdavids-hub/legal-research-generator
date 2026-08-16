@@ -135,19 +135,19 @@ Override any endpoint or model in `.env` (copy from `.env.example`). To run full
 
 ### The Model Jury (secondary chat)
 
-The chat module does not ask one model. It runs a **panel** of five, synthesizes
-a single answer, then hands that answer to **two verifiers** that critique it and
-score its grounding — seven model activations per query.
+The chat module does not ask one model. It runs a **panel**, synthesizes a single
+answer, then hands that answer to **two verifiers** that critique it and score its
+grounding. Five panel slots are configured and warmed; four are queried.
 
-| Slot | Default model | `.env` key |
-| --- | --- | --- |
-| Panel | `gpt-oss:20b` | `LRG_MULTI_CHAT_GPT_OSS_MODEL` |
-| Panel | `gemma4:latest` | `LRG_MULTI_CHAT_GEMMA4_MODEL` |
-| Panel | `apertus:latest` | `LRG_MULTI_CHAT_APERTUS_MODEL` |
-| Panel | `nemotron-3-nano:4b` | `LRG_MULTI_CHAT_NEMOTRON_MODEL` |
-| Panel | `hermes3:8b` | `LRG_MULTI_CHAT_HERMES3_MODEL` |
-| Verifier | `gemma3:4b` | `LRG_MULTI_CHAT_VERIFIER_GEMMA3_MODEL` |
-| Verifier | `saul:7b-instruct-v1` | `LRG_MULTI_CHAT_VERIFIER_SAUL_MODEL` |
+| Slot | Default model | `.env` key | Queried |
+| --- | --- | --- | --- |
+| Panel | `gpt-oss:20b` | `LRG_MULTI_CHAT_GPT_OSS_MODEL` | yes |
+| Panel | `gemma4:latest` | `LRG_MULTI_CHAT_GEMMA4_MODEL` | yes |
+| Panel | `apertus:latest` | `LRG_MULTI_CHAT_APERTUS_MODEL` | yes |
+| Panel | `hermes3:8b` | `LRG_MULTI_CHAT_HERMES3_MODEL` | yes |
+| Panel | `nemotron-3-nano:4b` | `LRG_MULTI_CHAT_NEMOTRON_MODEL` | no — see below |
+| Verifier | `gemma3:4b` | `LRG_MULTI_CHAT_VERIFIER_GEMMA3_MODEL` | yes |
+| Verifier | `saul:7b-instruct-v1` | `LRG_MULTI_CHAT_VERIFIER_SAUL_MODEL` | yes |
 
 ```bash
 ollama pull gpt-oss:20b
@@ -156,8 +156,18 @@ ollama pull apertus:latest
 ```
 
 Panel membership is configuration, not code — `LRG_MULTI_CHAT_PANEL_MEMBERS`
-selects which of the five actually get queried, and all five stay available to
-the rescue and verifier paths regardless.
+selects which slots are queried, and the rest stay warmed and reachable by the
+rescue and verifier paths. Seven models are still activated per query, so the
+residency requirement below is unchanged by narrowing the panel.
+
+`nemotron-3-nano:4b` is configured but not queried. It clears the per-model
+timeout easily and still returns filler: run through the API with all seven
+models resident and no contention, it produced `Degraded panel answer (…
+low-substance rewrite fallback)` — generic prose that never mentioned the
+question's subject. A probe minutes earlier got a real answer from it, so it is
+unreliable rather than uniformly bad, which is worse for a panel whose whole
+value is independent reads. More memory and more time do not fix it; if you
+re-enable it, check what its slot actually contains rather than that it returned.
 
 **This is the part that needs tuning before it works.** Ollama's stock
 `OLLAMA_MAX_LOADED_MODELS` is 3, and seven models do not fit in three slots — the
