@@ -151,6 +151,11 @@ export interface AppConfig {
   /** The slots actually queried, in order. */
   multi_chat_panel_members: string[];
   multi_chat_verifiers: Record<string, string>;
+  /** thesis / antithesis / synthesis / nli. The four must come from distinct
+   * model families — same-family debaters have correlated errors and produce
+   * agreement dressed as debate — so showing the lineup is how a reader checks
+   * the debate was real. */
+  dialectic_models: Record<string, string>;
 }
 
 export interface MultiChatTurn {
@@ -193,6 +198,70 @@ export interface MultiChatResponse {
   model_answers: MultiChatModelAnswer[];
   verifiers: MultiChatVerifierResult[];
   grounding?: MultiChatGrounding;
+}
+
+export type DialecticWeight = "controlling" | "persuasive" | "supporting" | "contra";
+export type DialecticSlotStatus = "pending" | "not_found" | "verified";
+
+export interface DialecticSlot {
+  proposition: string;
+  court_hint: string;
+  /** Widened to string deliberately: the backend types these as plain `str`
+   * with defaults, so a value outside the union is possible and must render
+   * rather than crash. */
+  weight: DialecticWeight | string;
+  status: DialecticSlotStatus | string;
+  cluster_id: string;
+  normalized_cite: string;
+  note: string;
+}
+
+export interface DialecticPosition {
+  side: string;
+  model: string;
+  /** Which model family argued this side. The lineup requires four distinct
+   * families — same-family debaters have correlated errors and produce
+   * agreement dressed as debate — so this is worth showing, not just storing. */
+  family: string;
+  propositions: DialecticSlot[];
+}
+
+export interface DialecticCrux {
+  thesis_prop: DialecticSlot;
+  antithesis_prop: DialecticSlot;
+  negates: boolean;
+  partition: string;
+  winner: "thesis" | "antithesis" | "none" | string;
+  /** True when both sides carry controlling or persuasive weight. A crux
+   * between two `supporting` propositions is still a contradiction, just not
+   * resolvable by authority — rank on this, do not filter on it. */
+  outcome_bearing: boolean;
+  /** Which NLI path produced the label. "heuristic" means the configured NLI
+   * model was absent or unparseable and the offline fallback answered — a
+   * weaker basis than "model", and the reason this travels with the label
+   * instead of being inferred. */
+  nli_source: "model" | "heuristic" | string;
+}
+
+export interface DialecticResponse {
+  question: string;
+  thesis: DialecticPosition;
+  antithesis: DialecticPosition;
+  synthesis: string;
+  cruxes: DialecticCrux[];
+  calls_spent: number;
+  /** Regeneration attempts across both positions and the synthesis. A turn that
+   * burned its budget is otherwise indistinguishable from a clean first pass. */
+  regenerated: number;
+  /** Why the crux table is empty, when it is. An empty table with no
+   * explanation is indistinguishable from a broken extractor. */
+  crux_note: string;
+  /** Server-rendered copy payloads; these preserve [UNSUPPORTED] markers, which
+   * a client re-serialising from the structured fields would drop. */
+  copy_exchange: string;
+  copy_thesis: string;
+  copy_antithesis: string;
+  copy_crux_table: string;
 }
 
 /** Whether a panel slot holds a real answer rather than a substitute.

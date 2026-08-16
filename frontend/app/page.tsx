@@ -18,6 +18,7 @@ import { BrainstormPanel } from "@/components/BrainstormPanel";
 import { CitationsPanel } from "@/components/CitationsPanel";
 import { IdeaBoard } from "@/components/IdeaBoard";
 import { ManuscriptPanel } from "@/components/ManuscriptPanel";
+import { DialecticPanel } from "@/components/DialecticPanel";
 import { ModelJuryPanel } from "@/components/ModelJuryPanel";
 import { Button } from "@/components/ui";
 import {
@@ -32,12 +33,13 @@ import {
   type AppConfig,
   type Blackboard,
   type IdeaStatus,
+  type DialecticResponse,
   type MultiChatResponse,
   type SocraticReviseResponse,
   type SocraticTurn,
 } from "@/lib/api";
 
-type Tab = "manuscript" | "citations" | "jury";
+type Tab = "manuscript" | "citations" | "jury" | "dialectic";
 
 // Run as jobs, not through the synchronous routes: those hold a request open
 // for the whole step, which nothing in front of this app is willing to wait for.
@@ -388,7 +390,7 @@ export default function Home() {
 
         <div className="flex min-h-0 flex-col">
           <div className="mb-2 flex gap-1.5">
-            {(["manuscript", "citations", "jury"] as Tab[]).map((t) => (
+            {(["manuscript", "citations", "jury", "dialectic"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -415,6 +417,24 @@ export default function Home() {
               />
             ) : tab === "citations" ? (
               <CitationsPanel bb={bb} report={report} />
+            ) : tab === "dialectic" ? (
+              <DialecticPanel
+                modelMap={config.dialectic_models}
+                // Same reasoning as the jury: a job, not the synchronous route.
+                // The dialectic's stages are heterogeneous enough that the stage
+                // name is worth more than elapsed time, so progress is forwarded
+                // rather than dropped.
+                onAsk={(message, onProgress) =>
+                  askAsJob<DialecticResponse>(
+                    bb.session_id,
+                    "dialectic",
+                    message,
+                    [],
+                    undefined,
+                    (event) => onProgress(describeEvent(event))
+                  )
+                }
+              />
             ) : (
               <ModelJuryPanel
                 modelMap={config.multi_chat_models}
