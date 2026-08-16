@@ -9,6 +9,7 @@ text. These tests pin the arithmetic that prevents that.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -18,7 +19,13 @@ import legal_research.multi_chat as multi_chat_module
 from legal_research.config import Settings, reset_settings
 from legal_research.multi_chat import _MAX_RESERVE_FRACTION, MultiModelChat
 
-PANEL_SIZE = 5
+#: The panel these tests reason about, pinned rather than read from the ambient
+#: configuration. `.env` now ships a three-model panel because five concurrent
+#: generations do not fit this GPU's budget, and a test that quietly followed
+#: that would be asserting facts about the deployment instead of the code -- and
+#: would change its meaning again the next time the hardware does.
+PANEL_MEMBERS = ["gpt_oss", "gemma4", "apertus", "nemotron", "hermes3"]
+PANEL_SIZE = len(PANEL_MEMBERS)
 
 ANALYSIS = (
     "The controlling rule requires scienter, and the doctrine breaks into elements "
@@ -37,6 +44,7 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("LRG_LLM_MODE", "openai")
     monkeypatch.setenv("LRG_RETRIEVER_MODE", "mock")
     monkeypatch.setenv("LRG_MULTI_CHAT_GROUNDING_ENABLED", "false")
+    monkeypatch.setenv("LRG_MULTI_CHAT_PANEL_MEMBERS", json.dumps(PANEL_MEMBERS))
     reset_settings()
     return Settings()
 
@@ -250,6 +258,7 @@ def test_constrained_hardware_profile_still_runs_the_whole_pipeline(
     monkeypatch.setenv("LRG_MULTI_CHAT_PER_MODEL_TIMEOUT_SECONDS", "25")
     monkeypatch.setenv("LRG_MULTI_CHAT_SYNTHESIS_TIMEOUT_SECONDS", "20")
     monkeypatch.setenv("LRG_MULTI_CHAT_PER_VERIFIER_TIMEOUT_SECONDS", "15")
+    monkeypatch.setenv("LRG_MULTI_CHAT_PANEL_MEMBERS", json.dumps(PANEL_MEMBERS))
     reset_settings()
     constrained = Settings()
     calls, _ = _install_llm(monkeypatch)
@@ -262,7 +271,7 @@ def test_constrained_hardware_profile_still_runs_the_whole_pipeline(
     result = chat.chat("What does scienter require?", history=[])
 
     names = [c["name"] for c in calls]
-    for expected in ("gpt_oss", "gemma4", "apertus", "nemotron", "hermes3", "panel_synth"):
+    for expected in (*PANEL_MEMBERS, "panel_synth"):
         assert expected in names
     assert len(result.verifiers) == 2
     for verifier in result.verifiers:

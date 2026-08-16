@@ -180,6 +180,36 @@ class MultiModelChat:
         )
         return min(wanted, total * _MAX_RESERVE_FRACTION)
 
+    #: Every model the panel can draw on. Membership is configured separately;
+    #: this is the map from a member name to the model it runs.
+    _PANEL_MODELS = {
+        "gpt_oss": "multi_chat_gpt_oss_model",
+        "gemma4": "multi_chat_gemma4_model",
+        "apertus": "multi_chat_apertus_model",
+        "nemotron": "multi_chat_nemotron_model",
+        "hermes3": "multi_chat_hermes3_model",
+    }
+
+    def _panel_specs(self) -> list[tuple[str, str]]:
+        """The (name, model) pairs to ask, in configured order.
+
+        An unknown member name raises rather than being skipped: a panel quietly
+        one member short is a panel whose disagreement measure is reading a
+        different jury than the author thinks, and no amount of downstream
+        checking would notice.
+        """
+
+        members = list(self._settings.multi_chat_panel_members)
+        unknown = [m for m in members if m not in self._PANEL_MODELS]
+        if unknown:
+            raise ValueError(
+                f"unknown panel member(s) {unknown}; expected from "
+                f"{sorted(self._PANEL_MODELS)}"
+            )
+        if not members:
+            raise ValueError("the panel has no members; set multi_chat_panel_members")
+        return [(name, getattr(self._settings, self._PANEL_MODELS[name])) for name in members]
+
     def _panel_budget(self, panel_size: int) -> tuple[float, float]:
         """Return ``(wall_budget, per_model_timeout)`` for the panel.
 
@@ -817,13 +847,7 @@ class MultiModelChat:
         prior = self._history_messages(history or [])
         user_turn = ChatMessage("user", prompt)
 
-        panel_specs = [
-            ("gpt_oss", self._settings.multi_chat_gpt_oss_model),
-            ("gemma4", self._settings.multi_chat_gemma4_model),
-            ("apertus", self._settings.multi_chat_apertus_model),
-            ("nemotron", self._settings.multi_chat_nemotron_model),
-            ("hermes3", self._settings.multi_chat_hermes3_model),
-        ]
+        panel_specs = self._panel_specs()
 
         packet = AuthorityPacket()
         auditor = self._get_auditor()

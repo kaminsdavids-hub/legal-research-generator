@@ -125,6 +125,16 @@ class Settings(BaseSettings):
     # trades wall time for swapping. 2 is safe with the default 5-model panel;
     # raise it once the host has headroom.
     multi_chat_panel_concurrency: int = 2
+    #: Which of the configured models actually sit on the panel, in order.
+    #:
+    #: Separate from the model settings on purpose: all five stay configured and
+    #: available to the rescue and verifier paths, and this decides only who is
+    #: asked to opine. Panel size is a hardware question -- five concurrent
+    #: generations on one GPU cost each of them 2.3-2.6x their solo time -- and
+    #: it should be answerable without editing the engine.
+    multi_chat_panel_members: list[str] = Field(
+        default_factory=lambda: ["gpt_oss", "gemma4", "apertus", "nemotron", "hermes3"]
+    )
     multi_chat_synthesis_timeout_seconds: float = 45.0
     multi_chat_per_verifier_timeout_seconds: float = 18.0
     multi_chat_rescue_model: str = "gpt-oss:20b"

@@ -178,7 +178,9 @@ def test_multi_chat_endpoint(client: TestClient) -> None:
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["final_answer"]
-    assert len(payload["model_answers"]) == 5
+    from legal_research.config import get_settings
+
+    assert len(payload["model_answers"]) == len(get_settings().multi_chat_panel_members)
     assert len(payload["verifiers"]) == 2
 
 
@@ -1041,8 +1043,13 @@ def test_the_panel_reports_each_model_as_it_finishes(client: TestClient) -> None
 
     assert kinds[0] == "panel_started"
     assert "synthesising" in kinds
+    from legal_research.config import get_settings
+
     answered = [e for e in events if e["event"] == "model_answered"]
-    assert len(answered) == 5, "one event per panel model"
+    # One per panel member, whoever they are: the membership is configuration
+    # and moves with the hardware, but the correspondence is the invariant.
+    assert len(answered) == len(get_settings().multi_chat_panel_members)
+    assert {e["name"] for e in answered} == set(get_settings().multi_chat_panel_members)
     for event in answered:
         assert event["model"] and isinstance(event["seconds"], float)
         assert isinstance(event["answered"], bool)
@@ -1323,3 +1330,54 @@ def test_a_substituted_panel_answer_is_not_reported_as_an_answer() -> None:
         "   ",
     ):
         assert not MultiModelChat.answered(substitute), substitute
+
+
+def test_the_panel_membership_is_configuration_not_code() -> None:
+    """Panel size is a hardware question — five concurrent generations on one GPU
+    cost each of them 2.3-2.6x their solo time — so it has to be answerable
+    without editing the engine."""
+
+    from legal_research.config import Settings
+    from legal_research.multi_chat import MultiModelChat
+
+    three = MultiModelChat(
+        Settings(llm_mode="mock", multi_chat_panel_members=["gpt_oss", "apertus", "hermes3"])
+    )
+
+    assert [name for name, _ in three._panel_specs()] == ["gpt_oss", "apertus", "hermes3"]
+    # Every model stays configured; membership decides only who is asked.
+    assert three._settings.multi_chat_gemma4_model
+
+
+def test_an_unknown_panel_member_raises_rather_than_being_skipped() -> None:
+    """A panel quietly one member short is a panel whose disagreement measure is
+    reading a different jury than the author thinks, and nothing downstream would
+    notice."""
+
+    import pytest as _pytest
+
+    from legal_research.config import Settings
+    from legal_research.multi_chat import MultiModelChat
+
+    engine = MultiModelChat(
+        Settings(llm_mode="mock", multi_chat_panel_members=["gpt_oss", "gpt_5_turbo"])
+    )
+
+    with _pytest.raises(ValueError, match="unknown panel member"):
+        engine._panel_specs()
+
+    empty = MultiModelChat(Settings(llm_mode="mock", multi_chat_panel_members=[]))
+    with _pytest.raises(ValueError, match="no members"):
+        empty._panel_specs()
+
+
+def test_the_shipped_panel_is_the_three_that_finish() -> None:
+    """Pinned to the measurement: gemma4 and nemotron are dropped because they
+    time out and are replaced with canned text, which is a worse answer than not
+    asking them."""
+
+    from legal_research.config import Settings, reset_settings
+
+    reset_settings()
+
+    assert Settings().multi_chat_panel_members == ["gpt_oss", "apertus", "hermes3"]
