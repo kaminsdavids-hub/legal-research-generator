@@ -638,8 +638,19 @@ class MultiModelChat:
                 [
                     ChatMessage(
                         "system",
+                        # 1-2 paragraphs, not 3-4. Measured on this hardware: five
+                        # models writing four paragraphs each take 114-158s under
+                        # mutual contention, against a 139s panel budget, so every
+                        # model but the smallest timed out and was replaced with
+                        # canned text -- a panel that produced nothing at all. The
+                        # analytical requirements below are unchanged; only the
+                        # length is cut, because length is what costs. The
+                        # synthesis discards most of the prose anyway, and the
+                        # retry prompt already asked for 1-2 paragraphs, so this
+                        # also stops the first attempt and its retry disagreeing
+                        # about what a good answer looks like.
                         "You are one member of a legal-research chat panel. "
-                        "Write a rigorous doctrinal analysis in 3-4 paragraphs, not bullets. "
+                        "Write a rigorous doctrinal analysis in 1-2 tight paragraphs, not bullets. "
                         "Identify the controlling rule, break it into explicit elements/tests, "
                         "map concrete factual predicates to each element, and stress-test the "
                         "result against the strongest counterargument. Distinguish proven facts "
@@ -863,7 +874,10 @@ class MultiModelChat:
             with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 model_answers = list(pool.map(_ask, panel_specs))
 
-        report("synthesising", answers=len([a for a in model_answers if a.content.strip()]))
+        # Real answers, not non-empty strings: the same distinction the
+        # per-model event draws. "synthesising 5 answers" over five canned
+        # substitutes is the panel congratulating itself on having failed.
+        report("synthesising", answers=sum(1 for a in model_answers if self.answered(a.content)))
 
         final_answer = ""
         remaining = self._remaining_seconds(started_at)
