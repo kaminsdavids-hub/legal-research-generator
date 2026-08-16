@@ -334,6 +334,39 @@ there. The stream is for clients talking to the backend directly, over loopback
 or the tailnet, which is also where the interactive steps feel worst under
 polling.
 
+### The tailnet is not "directly" for a long job
+
+Measured 2026-08-16, driving the Model Jury from a browser. Identical component,
+identical backend; only `NEXT_PUBLIC_API_URL` differed.
+
+| API base | Outcome |
+| --- | --- |
+| `https://spark-f5f8.tail511665.ts.net:8447` | `ERR_NETWORK_CHANGED`, then on a second run `TypeError: Failed to fetch` after 10 minutes |
+| `http://127.0.0.1:8090` | completed, `4 of 4 answered` |
+
+Short calls over the same tailnet address — `/api/config`, session creation,
+individual job polls — returned 200 throughout. It is the multi-minute wait that
+does not survive, and it fails in both halves of `awaitJob()`:
+
+1. **The SSE stream is a long-lived connection**, which is exactly what a
+   `tailscale serve` hop drops. "Every call is fast by construction" is true of
+   the job *routes*; it is not true of `/api/jobs/{id}/events`, which the client
+   prefers. So the paragraph above should be read as loopback, not tailnet.
+2. **The polling fallback does not tolerate a single failed poll.** The loop in
+   `awaitJob()` calls `jsonFetch` with no `try`, so one transient rejection
+   propagates and abandons the wait — after roughly 150 polls at 2s over a
+   five-minute panel, one blip is close to certain on a flaky path. The backend
+   job is unharmed and still finishes; only the client stops listening, which is
+   the worst version of the failure because the work was done and thrown away.
+
+The fallback exists for paths where the stream fails, and is currently less
+robust than the thing it is backing up. Retrying a failed poll against a budget
+would fix it; nothing here needs a backend change.
+
+Until then: run the studio against loopback when you intend to use the jury or
+dialectic. The tailnet is fine for browsing, the manuscript panels, and anything
+that finishes in seconds.
+
 ### Reachability
 
 `BACKEND_URL` must resolve and route from Netlify's build and function

@@ -495,6 +495,15 @@ async function streamJob(
   }
 }
 
+/** Consecutive failed polls tolerated before giving up on a job.
+ *
+ *  At the 2s default interval this is ten seconds of sustained failure, which
+ *  clears the transient drops seen on a tailnet hop without hiding a backend
+ *  that has actually stopped answering. The count resets on any success, so a
+ *  long job survives repeated isolated blips -- it is a run of failures that
+ *  means something, not a total. */
+const MAX_CONSECUTIVE_POLL_FAILURES = 5;
+
 /** Wait for a job: stream if we can, poll if the stream is unavailable.
  *
  *  The fallback is not defensive padding. A proxy with a function timeout will
@@ -514,14 +523,51 @@ export async function awaitJob(
     // a proxy cutting the stream should cost you the immediacy, not the
     // information. Replay only what is new, or every poll would repeat the lot.
     let seen = 0;
-    let status = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
+    let consecutiveFailures = 0;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // One poll, surviving a transient failure.
+    //
+    // This loop is the fallback for paths where the stream does not hold, so it
+    // is exactly the wrong place to be brittle -- and it was: a bare jsonFetch
+    // meant one rejected request abandoned the whole wait. A five-minute panel
+    // is ~150 polls, so on a flaky hop (a tailscale serve proxy, measured) a
+    // single blip was near-certain, and the backend job would run to completion
+    // with nobody listening. Work done and thrown away is the worst outcome
+    // available here, worse than waiting longer.
+    //
+    // Bounded, though: a backend that is genuinely gone must surface as an
+    // error rather than a spinner that never resolves. Unauthorized is never
+    // retried -- a key does not become correct by asking again.
+    const poll = async (): Promise<JobStatus> => {
+      for (;;) {
+        try {
+          const next = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
+          consecutiveFailures = 0;
+          return next;
+        } catch (e) {
+          if (e instanceof UnauthorizedError) throw e;
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+            throw new Error(
+              `job ${jobId}: ${consecutiveFailures} consecutive polls failed ` +
+                `(last: ${e}). The job may still be running on the backend; ` +
+                `GET /api/jobs/${jobId} will still return its result.`
+            );
+          }
+          await sleep(intervalMs);
+        }
+      }
+    };
+
+    let status = await poll();
     for (;;) {
       onState?.(status.state);
       status.events.slice(seen).forEach((e) => onProgress?.(e));
       seen = status.events.length;
       if (status.state !== "running") return status;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-      status = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
+      await sleep(intervalMs);
+      status = await poll();
     }
   }
 }
