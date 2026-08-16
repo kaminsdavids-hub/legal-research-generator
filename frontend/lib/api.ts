@@ -522,7 +522,15 @@ export const api = {
         apply_revision: applyRevision,
       }),
     }),
-  runAll: (id: string, idea: string, title: string) =>
+  /** The synchronous route: one request held open for the entire pipeline.
+   *  Correct only for a loopback client with nothing in between. The app uses
+   *  the exported `runAll()` above, which submits a job and polls; this stays
+   *  for scripts and local tools that genuinely want to block.
+   *
+   *  Named apart from `runAll` deliberately. They previously shared a name in
+   *  two scopes, and the page reached the wrong one — which compiled fine until
+   *  a real build resolved the import. */
+  runAllSync: (id: string, idea: string, title: string) =>
     jsonFetch<{ session_id: string; steps: { agent: string; runtime: string; summary: string }[]; shippable: boolean }>(
       `/api/sessions/${id}/run-all`,
       { method: "POST", body: JSON.stringify({ idea, title }) }

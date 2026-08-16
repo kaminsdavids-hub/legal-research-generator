@@ -21,6 +21,7 @@ import { ManuscriptPanel } from "@/components/ManuscriptPanel";
 import { Button } from "@/components/ui";
 import {
   api,
+  runAll,
   runStep,
   setProxyPassword,
   UnauthorizedError,
@@ -278,7 +279,7 @@ export default function Home() {
             variant="ghost"
             onClick={() =>
               withBusy("run-all", async (onProgress) => {
-                const { blackboard } = await api.runAll(
+                const { blackboard } = await runAll(
                   bb.session_id,
                   bb.thesis || title,
                   title,
