@@ -119,6 +119,11 @@ export interface Blackboard {
   title: string;
   thesis: string;
   brainstorm: BrainstormTurn[];
+  /** Non-empty when the Interviewer fell back to generic questions instead of
+   * model-generated ones, carrying the reason. The backend always sends it
+   * (blackboard.py), so the panel can say so rather than presenting canned
+   * questions as if a model wrote them. */
+  brainstorm_degraded?: string;
   ideas: Idea[];
   outline: OutlineSection[];
   authorities: Authority[];
@@ -141,6 +146,17 @@ export interface AppConfig {
   disclaimer: string;
 }
 
+/** The five Socratic prompts the Editor knows. Kept in step with the backend's
+ * own Literal (api/schemas.py) — anything else is normalised server-side to
+ * "strengthen_doctrine" (agents/editor.py), so an unlisted mode here would be
+ * silently rewritten rather than rejected. */
+export type SocraticMode =
+  | "strengthen_doctrine"
+  | "expand_analysis"
+  | "counter_rebuttal"
+  | "policy_implications"
+  | "comparative_framework";
+
 export interface SocraticTurn {
   role: "user" | "assistant";
   content: string;
@@ -152,6 +168,15 @@ export interface SocraticReviseResponse {
   assistant: string;
   suggested_revision: string;
   applied: boolean;
+  /** The four fields below are sent by the backend on every socratic revise
+   * (api/schemas.py) and were simply undeclared here. cycle_break_triggered
+   * says the exchange was stopped for going in circles rather than for being
+   * finished, which is the difference between a resolved point and an
+   * abandoned one -- the panel shows it, so it must be on the type. */
+  mode: SocraticMode;
+  cycle_break_triggered: boolean;
+  novelty_score: number;
+  rewrite_delta_score: number;
 }
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
