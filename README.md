@@ -107,6 +107,7 @@ The backend defaults to `LRG_LLM_MODE=openai` and routes every expert role throu
 ollama pull llama3.1:8b
 ollama pull gemma3:4b
 ollama pull nemotron-3-nano:4b
+ollama pull hermes3:8b
 
 # SaulLM-7B (Equall/Saul-7B-Instruct-v1) — pull the GGUF from Hugging Face and
 # give it a clean local name:
@@ -130,7 +131,42 @@ Post-draft grammar correction runs sequentially by default:
 2. `gemma`
 3. `hermes3`
 
-Override any endpoint or model in `.env` (copy from `.env.example`). To run fully mocked again, set `LRG_LLM_MODE=mock`.
+Override any endpoint or model in `.env` (copy from `.env.example`). To run fully mocked again, set `LRG_LLM_MODE=mock`. The table above is the *code* default; a deployment with more GPU headroom will typically point these roles at larger models in `.env` — on the Spark, `writer` runs `gpt-oss:20b` and `gemma` runs `gemma4:latest`.
+
+### The Model Jury (secondary chat)
+
+The chat module does not ask one model. It runs a **panel** of five, synthesizes
+a single answer, then hands that answer to **two verifiers** that critique it and
+score its grounding — seven model activations per query.
+
+| Slot | Default model | `.env` key |
+| --- | --- | --- |
+| Panel | `gpt-oss:20b` | `LRG_MULTI_CHAT_GPT_OSS_MODEL` |
+| Panel | `gemma4:latest` | `LRG_MULTI_CHAT_GEMMA4_MODEL` |
+| Panel | `apertus:latest` | `LRG_MULTI_CHAT_APERTUS_MODEL` |
+| Panel | `nemotron-3-nano:4b` | `LRG_MULTI_CHAT_NEMOTRON_MODEL` |
+| Panel | `hermes3:8b` | `LRG_MULTI_CHAT_HERMES3_MODEL` |
+| Verifier | `gemma3:4b` | `LRG_MULTI_CHAT_VERIFIER_GEMMA3_MODEL` |
+| Verifier | `saul:7b-instruct-v1` | `LRG_MULTI_CHAT_VERIFIER_SAUL_MODEL` |
+
+```bash
+ollama pull gpt-oss:20b
+ollama pull gemma4:latest
+ollama pull apertus:latest
+```
+
+Panel membership is configuration, not code — `LRG_MULTI_CHAT_PANEL_MEMBERS`
+selects which of the five actually get queried, and all five stay available to
+the rescue and verifier paths regardless.
+
+**This is the part that needs tuning before it works.** Ollama's stock
+`OLLAMA_MAX_LOADED_MODELS` is 3, and seven models do not fit in three slots — the
+server evicts and reloads mid-query, and the slower panel members blow past
+`LRG_MULTI_CHAT_PER_MODEL_TIMEOUT_SECONDS` and get replaced with canned text. On
+the Spark the seven weigh 52.8 GB of 121 GB unified memory, so the fix is server
+configuration rather than hardware: see
+[deploy/README.md](deploy/README.md#ollama-server-settings-the-model-jurys-real-constraint).
+Confirm with `ollama ps` during a query — you want 7 resident, not 3.
 
 ### Share on your local network
 
@@ -246,6 +282,12 @@ LRG_RETRIEVER_MODE=faiss \
 LRG_EMBED_MODEL=nvidia/Nemotron-3-Embed-1B-BF16 \
 scripts/run.sh
 ```
+
+If you plan to use the Model Jury, set `OLLAMA_MAX_LOADED_MODELS=8` and
+`OLLAMA_NUM_PARALLEL=1` on the Ollama service first — at the stock values the
+seven-model jury thrashes and silently degrades to a smaller panel. Drop-in files
+and the measurement behind those numbers are in
+[deploy/README.md](deploy/README.md#ollama-server-settings-the-model-jurys-real-constraint).
 
 ---
 

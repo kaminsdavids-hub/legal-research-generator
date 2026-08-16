@@ -1371,13 +1371,27 @@ def test_an_unknown_panel_member_raises_rather_than_being_skipped() -> None:
         empty._panel_specs()
 
 
-def test_the_shipped_panel_is_the_three_that_finish() -> None:
-    """Pinned to the measurement: gemma4 and nemotron are dropped because they
-    time out and are replaced with canned text, which is a worse answer than not
-    asking them."""
+def test_the_shipped_panel_is_the_five_that_finish() -> None:
+    """Pinned to the measurement, re-taken 2026-08-16 after the Ollama server was
+    given MAX_LOADED_MODELS=8 and NUM_PARALLEL=1. All seven models (five panel,
+    two verifiers) now stay resident, so gemma4 and nemotron no longer lose their
+    bandwidth to the other three and both answer inside the 110s cap -- slowest
+    is gpt-oss at 80.9s. The reason the panel was three was eviction, not model
+    quality; if the panel regresses, shrink it back before raising the timeout."""
 
     from legal_research.config import Settings, reset_settings
 
     reset_settings()
 
-    assert Settings().multi_chat_panel_members == ["gpt_oss", "apertus", "hermes3"]
+    settings = Settings()
+    assert settings.multi_chat_panel_members == [
+        "gpt_oss",
+        "gemma4",
+        "apertus",
+        "nemotron",
+        "hermes3",
+    ]
+    # The margin is the point: 110s cleared the slowest by 29s. A timeout raised
+    # to paper over a slow panel would silently reintroduce the canned-text
+    # substitution this panel size was originally cut to avoid.
+    assert settings.multi_chat_per_model_timeout_seconds == 110.0

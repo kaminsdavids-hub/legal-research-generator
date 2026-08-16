@@ -37,6 +37,60 @@ scripts/serve_models.sh
 | hermes  | ideation / brainstorming               | 8106         |
 | hermes3 | final grammar / fluency pass           | 8107         |
 
+### Ollama server settings (the Model Jury's real constraint)
+
+The jury activates **seven models per query** — five panel members plus two
+verifiers. They must all be *co-resident*, or Ollama evicts and reloads models
+mid-query and charges that reload time to whichever models are still generating.
+This is not a disk question: on the Spark the seven weigh 52.8 GB against 121 GB
+of unified memory, so there is ample room, and the only thing standing between a
+three-model panel and a five-model panel is these two server settings.
+
+Ollama's stock `OLLAMA_MAX_LOADED_MODELS` is **3**, which is far too low here.
+Set the drop-ins (`/etc/systemd/system/ollama.service.d/`), then reload:
+
+```bash
+sudo tee /etc/systemd/system/ollama.service.d/limits.conf >/dev/null <<'EOF'
+[Service]
+Environment="OLLAMA_MAX_LOADED_MODELS=8"
+Environment="OLLAMA_CONTEXT_LENGTH=8192"
+EOF
+```
+
+```bash
+sudo tee /etc/systemd/system/ollama.service.d/parallel.conf >/dev/null <<'EOF'
+[Service]
+Environment="OLLAMA_NUM_PARALLEL=1"
+EOF
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+Why these values:
+
+| Setting | Value | Reason |
+| --- | --- | --- |
+| `OLLAMA_MAX_LOADED_MODELS` | 8 | 7 models per jury query, plus one slot of slack. At 6 the two oldest were evicted every query. |
+| `OLLAMA_NUM_PARALLEL` | 1 | Each loaded model reserves KV cache per parallel slot. At 2, seven models wanted roughly double the cache for concurrency the panel never uses — it queries *different* models, not one model repeatedly. |
+| `OLLAMA_CONTEXT_LENGTH` | 8192 | Fits the panel prompt plus the authority packet. |
+
+Verify residency during a live jury query — this should show 7, not 3:
+
+```bash
+ollama ps
+```
+
+Measured on this box (2026-08-16), five concurrent panel members, all resident:
+`hermes3` 25.3s, `apertus` 47.1s, `nemotron` 70.2s, `gemma4` 75.0s, `gpt-oss`
+80.9s — all inside the 110s per-model cap, whole exchange 139.5s. Before the
+change, under eviction, `gpt-oss` took 101s and `gemma4`/`nemotron` missed the
+cap entirely. If you deploy to a box with less unified memory, shrink
+`LRG_MULTI_CHAT_PANEL_MEMBERS` rather than raising
+`LRG_MULTI_CHAT_PER_MODEL_TIMEOUT_SECONDS` — a model that times out is replaced
+with canned text, which is a worse answer than not asking it.
+
 ## 3. Point the backend at the local models
 
 ```bash
@@ -114,9 +168,13 @@ script exits non-zero if **any** model fails.
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 spark-node \
-    'bash -s -- llama3.1:8b saul:7b-instruct-v1 gemma3:4b nemotron-3-nano:4b' < scripts/model_smoke.sh
+    'bash -s -- gpt-oss:20b gemma4:latest apertus:latest nemotron-3-nano:4b hermes3:8b gemma3:4b saul:7b-instruct-v1' < scripts/model_smoke.sh
 echo "exit=$?"   # 0 only if every model responded
 ```
+
+Those seven are the jury's five panel members plus its two verifiers — the set
+that must be co-resident. Smoke-testing them together is also the cheapest way
+to confirm the `OLLAMA_MAX_LOADED_MODELS` setting above actually took.
 
 Note: a model can fail the smoke test for lack of free memory while a large vLLM
 server holds the GPU (e.g. `llama3.1:8b` needs ~20 GiB) — that is a correctly
