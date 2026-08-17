@@ -203,6 +203,43 @@ _CITATION_FEEDBACK = (
     "other part of your answer — only the naming has to change."
 )
 
+
+#: The position's version of the same correction.
+#:
+#: Separate from `_CITATION_FEEDBACK` because the remedy differs: a position is
+#: not being asked to write around the authority, it already has a field for
+#: describing it. The scan covers `court_hint` as well as `proposition`, since a
+#: model blocked from citing in one will route the case name through the other,
+#: so the fix is to say the description belongs in court_hint and must stay a
+#: description.
+_POSITION_CITATION_FEEDBACK = (
+    "\n\nYour previous answer was REJECTED. These strings look like citations "
+    "and are not allowed in any field:\n{hits}\n"
+    "Do not name cases, parties, reporters or statute sections anywhere. Put a "
+    "plain-English DESCRIPTION of the authority you need in \"court_hint\" "
+    "instead — \"circuit precedent on encryption source code\", \"the published-"
+    "information exception in the export regulations\" — and keep the "
+    "proposition itself free of names. Retrieval resolves the citation; you "
+    "describe what you need."
+)
+
+
+#: Told to a position whose JSON could not be read.
+#:
+#: The parse branch re-rolled silently, so a model that misunderstood the shape
+#: kept misunderstanding it for the whole budget. The error text is quoted back
+#: because the failures are specific and fixable — a markdown fence, a missing
+#: "propositions" key, an extra key the prompt forbids — and none of them are
+#: guessable from being asked the same question again at a higher temperature.
+_PARSE_FEEDBACK = (
+    "\n\nYour previous answer was REJECTED because it could not be read: "
+    "{error}.\n"
+    "Respond with a single JSON object and nothing else — no prose before or "
+    "after it, no markdown fences. The shape is "
+    "{{\"propositions\": [{{\"proposition\": \"...\", \"court_hint\": \"...\", "
+    "\"weight\": \"...\"}}]}}, and those three keys are the only ones read."
+)
+
 _SYNTHESIS_PROMPT = (
     "You are the synthesis in a legal dialectic.\n"
     "The user question, thesis, and antithesis are provided below.\n"
@@ -430,9 +467,13 @@ class DialecticChat:
                     self.channel.scan(slot.court_hint, role="assistant")
             except CitationDetected as exc:
                 last_error = f"attempt {attempt}: citation string(s) rejected: {exc.hits}"
+                feedback = _POSITION_CITATION_FEEDBACK.format(
+                    hits="\n".join(f"  - {hit}" for hit in exc.hits)
+                )
                 continue
             except (json.JSONDecodeError, ValueError, KeyError) as exc:
                 last_error = f"attempt {attempt}: parse failed: {exc}"
+                feedback = _PARSE_FEEDBACK.format(error=exc)
                 continue
 
             try:
