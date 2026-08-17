@@ -104,6 +104,11 @@ class DialecticSlot(BaseModel):
     cluster_id: str = ""
     normalized_cite: str = ""
     note: str = ""
+    #: Which path verified this slot: "courtlistener" (a live citation lookup)
+    #: or "corpus" (a curated local record). Empty when not verified. The two
+    #: are different warrants and a client must not collapse them into one
+    #: badge — see CitationSlot.verified_by.
+    verified_by: str = ""
 
 
 class DialecticPosition(BaseModel):

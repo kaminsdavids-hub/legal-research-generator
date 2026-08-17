@@ -42,8 +42,26 @@ function SlotRow({ slot, index }: { slot: DialecticSlot; index: number }) {
             <ShieldAlert size={11} /> UNSUPPORTED
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+          // Two different warrants, deliberately not one badge. A citation
+          // lookup consulted an authoritative index; a corpus record says a
+          // curated file here carries the authority and marks it in force.
+          // Rendering both as plain green would let the weaker one borrow the
+          // stronger one's credibility.
+          <span
+            className={
+              "inline-flex items-center gap-1 text-[10px] font-semibold " +
+              (slot.verified_by === "corpus" ? "text-sky-700" : "text-emerald-700")
+            }
+            title={
+              slot.verified_by === "corpus"
+                ? "Held as in-force authority by the local corpus. Not adjudicated by a citation lookup — CourtListener does not index regulations or statutes."
+                : "Confirmed by CourtListener citation lookup."
+            }
+          >
             <ShieldCheck size={11} /> {slot.normalized_cite || "verified"}
+            {slot.verified_by === "corpus" && (
+              <span className="font-normal text-sky-600">· corpus</span>
+            )}
           </span>
         )}
       </div>

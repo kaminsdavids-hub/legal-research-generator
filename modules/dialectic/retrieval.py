@@ -53,6 +53,39 @@ class CiteAnnotator(Protocol):
         ...
 
 
+@runtime_checkable
+class CiteConfirmer(Protocol):
+    """Optional capability: confirm authority CourtListener structurally cannot.
+
+    CourtListener adjudicates case citations. A C.F.R. section, a U.S.C. section
+    or a Federal Register page is not in its index at any token or quota, so
+    those slots could never leave ``proposed`` however correct they were — and on
+    an export-control question the operative authority is *exactly* those, which
+    made the marker read "we looked and found nothing" when the truth was "no
+    configured verifier can adjudicate this".
+
+    A corpus record is a weaker warrant than a lookup and must not be presented
+    as the same thing: it says a curated local file carries this authority and
+    records it as in force, not that an authoritative source was consulted just
+    now. Implementations therefore confirm only what they actually hold, and the
+    engine records *which* path confirmed a slot rather than leaving a reader to
+    assume the stronger one.
+
+    Separate from :class:`CiteAnnotator` because the questions differ: annotate
+    asks "is this still good law", confirm asks "does this authority exist at
+    all". A retriever may answer one and not the other.
+    """
+
+    def confirm(self, cite: str) -> bool:
+        """True when this retriever holds *cite* as operative authority.
+
+        Must return ``False`` rather than raise when it holds nothing: a
+        confirmation miss is a normal outcome, not an error, and must not void
+        the turn.
+        """
+        ...
+
+
 class StubCiteRetriever:
     """Deterministic offline retriever backed by an explicit mapping.
 

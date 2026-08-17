@@ -54,6 +54,19 @@ class CitationSlot(BaseModel):
     cluster_id: str = ""
     normalized_cite: str = ""
     note: str = ""
+    #: Which path moved this slot to ``verified``: "courtlistener" for a live
+    #: citation lookup, "corpus" for a curated local record. Empty while the slot
+    #: is not verified.
+    #:
+    #: The two are not equivalent and must not render as one badge. A lookup
+    #: consulted an authoritative index just now; a corpus record says a file in
+    #: this repository carries the authority and marks it in force. The weaker
+    #: warrant is still worth having — on an export-control question the
+    #: operative authority is regulatory, which CourtListener cannot adjudicate
+    #: at all — but a reader deciding how much to trust a proposition needs to
+    #: know which one they got, so it travels with the status rather than being
+    #: inferred from the citation's shape.
+    verified_by: str = ""
 
 
 class Position(BaseModel):

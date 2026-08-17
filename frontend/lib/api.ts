@@ -214,6 +214,14 @@ export interface DialecticSlot {
   cluster_id: string;
   normalized_cite: string;
   note: string;
+  /** Which path verified this slot: "courtlistener" (a live citation lookup) or
+   * "corpus" (a curated local record). Empty when unverified. Do not collapse
+   * these into one badge — a lookup consulted an authoritative index just now,
+   * a corpus record says a file in the repo carries the authority. On an
+   * export-control question the operative authority is regulatory, which
+   * CourtListener cannot adjudicate at all, so "corpus" is often the only
+   * warrant available and the reader has to know that is what they have. */
+  verified_by?: string;
 }
 
 export interface DialecticPosition {

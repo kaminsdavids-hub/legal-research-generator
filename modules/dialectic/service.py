@@ -111,6 +111,34 @@ class _CorpusCiteRetriever:
             return ""
         return ""
 
+    def confirm(self, cite: str) -> bool:
+        """True when the corpus holds *cite* as in-force authority.
+
+        See :class:`modules.dialectic.retrieval.CiteConfirmer` for why this
+        exists and why it is a weaker warrant than a lookup. Deliberately narrow:
+
+        * Only records that format to exactly this cite count. Same match rule
+          as :meth:`annotate`, so the two capabilities cannot disagree about
+          which record a cite refers to.
+        * ``in_force`` only. A withdrawn or rescinded rule is *held* by the
+          corpus and must never be confirmed by it — that is the failure the
+          annotator exists to prevent, and confirming here would hand a reader
+          rescinded law wearing a verified badge.
+        * ``unverified`` records are refused. The corpus marks its own
+          provenance; a record admitting it is unchecked cannot warrant anything.
+        """
+        if not cite:
+            return False
+        for record in getattr(self._corpus, "records", []):
+            if self._format(record) != cite:
+                continue
+            if bool(getattr(record, "unverified", False)):
+                return False
+            status = getattr(record, "status", None)
+            value = getattr(status, "value", str(status or ""))
+            return value == "in_force"
+        return False
+
     def propose(self, court_hint: str, proposition: str) -> list[str]:
         query = f"{court_hint} {proposition}".strip()
         if not query:

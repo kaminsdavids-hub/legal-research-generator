@@ -25,7 +25,7 @@ from .models import (
 from .nli import NLIEvaluator
 from .retrieval import CiteRetriever
 from .roles import detect_family
-from .verification import CourtListenerClient, verify_position
+from .verification import CourtListenerClient, is_case_citation, verify_position
 
 
 class FamilyCollision(Exception):
@@ -594,6 +594,55 @@ class DialecticChat:
             )
         return position.model_copy(update={"propositions": proposed})
 
+    def _confirm(self, cite: str) -> bool:
+        """Whether the retriever holds *cite* as operative authority."""
+        confirm = getattr(self.retriever, "confirm", None)
+        if not callable(confirm):
+            return False
+        try:
+            return bool(confirm(cite))
+        except Exception:  # noqa: BLE001 - confirmation must not void a turn
+            return False
+
+    def _confirm_position(self, position: Position) -> Position:
+        """Confirm slots CourtListener structurally cannot adjudicate.
+
+        Runs AFTER ``_verify_position`` so a lookup always wins: a slot the
+        endpoint already resolved is never revisited, and one it rejected stays
+        rejected. Only the slots it could never speak to are considered — which
+        is why the guard is ``is_case_citation``, the same predicate
+        ``verify_position`` uses to decide what to send, rather than a status
+        check. Reusing the predicate is deliberate: two different notions of
+        "case citation" would eventually disagree and silently confirm something
+        the endpoint had already refused.
+
+        Runs BEFORE ``_annotate_position``, so a rescinded rule still collects
+        its note. ``confirm`` refuses anything not in force, so the two cannot
+        contradict each other, but the ordering means the note survives even if
+        that ever changes.
+        """
+        confirmed = []
+        for slot in position.propositions:
+            if (
+                slot.normalized_cite
+                and slot.status is not SlotStatus.VERIFIED
+                and not is_case_citation(slot.normalized_cite)
+                and self._confirm(slot.normalized_cite)
+            ):
+                note = "confirmed against the local corpus, not by citation lookup"
+                confirmed.append(
+                    slot.model_copy(
+                        update={
+                            "status": SlotStatus.VERIFIED,
+                            "verified_by": "corpus",
+                            "note": f"{slot.note}; {note}" if slot.note else note,
+                        }
+                    )
+                )
+            else:
+                confirmed.append(slot)
+        return position.model_copy(update={"propositions": confirmed})
+
     def _annotate(self, cite: str) -> str:
         """Status note for *cite*, when the retriever can supply one."""
         annotate = getattr(self.retriever, "annotate", None)
@@ -729,10 +778,14 @@ class DialecticChat:
         # earlier is overwritten before the synthesis can act on it.
         report("verifying")
         thesis = self._annotate_position(
-            self._note_unretrieved(self._verify_position(thesis, ledger))
+            self._confirm_position(
+                self._note_unretrieved(self._verify_position(thesis, ledger))
+            )
         )
         antithesis = self._annotate_position(
-            self._note_unretrieved(self._verify_position(antithesis, ledger))
+            self._confirm_position(
+                self._note_unretrieved(self._verify_position(antithesis, ledger))
+            )
         )
         # The slowest stage, and the one that reaches the network. Reporting the
         # budget spent is what tells a reader whether it did any work at all.
