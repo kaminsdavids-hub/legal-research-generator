@@ -205,3 +205,80 @@ def test_write_jsonl_roundtrip_and_dedupe(tmp_path: Path) -> None:
 
     # Appending the same records is idempotent.
     assert write_jsonl(records, out, append=True) == 0
+
+
+# --------------------------------------------------------------------------- #
+# A dissent is not authority
+# --------------------------------------------------------------------------- #
+def _cap_case(opinions: list[dict]) -> dict:
+    return {
+        "id": 1,
+        "name_abbreviation": "Test v. Test",
+        "decision_date": "1999-05-06",
+        "citations": [{"type": "official", "cite": "176 F.3d 1132"}],
+        "court": {"name": "United States Court of Appeals for the Ninth Circuit"},
+        "casebody": {"opinions": opinions},
+    }
+
+
+MAJORITY = (
+    "FLETCHER, Circuit Judge: We hold that the challenged regulations constitute a "
+    "prior restraint on speech that fails to give adequate procedural safeguards, and "
+    "we therefore affirm the judgment of the district court in all respects."
+)
+DISSENT = (
+    "T.G. NELSON, Circuit Judge, dissenting: Source code is a means of commanding a "
+    "computer to perform a function, and functionality is not protected expression, so "
+    "I would reverse and hold the regulations valid in their entirety."
+)
+
+
+def test_cap_ingest_keeps_only_the_majority() -> None:
+    """Joining every opinion made a dissent's language indistinguishable from the
+    holding once chunked: the verifier would confirm the quotation as verbatim and
+    present the losing argument as the court's."""
+
+    from legal_research.ingest.cap import CapIngestor
+
+    record = CapIngestor().record_from_case(
+        _cap_case([
+            {"type": "majority", "text": MAJORITY},
+            {"type": "dissent", "text": DISSENT},
+        ])
+    )
+
+    text = " ".join(record.passages)
+    assert "prior restraint" in text
+    assert "functionality is not protected expression" not in text
+    assert "dissenting" not in text
+
+
+def test_cap_ingest_falls_back_when_no_opinion_is_typed() -> None:
+    """Older CAP records carry untyped opinions; those keep the old behaviour."""
+
+    from legal_research.ingest.cap import CapIngestor
+
+    record = CapIngestor().record_from_case(_cap_case([{"text": MAJORITY}]))
+
+    assert "prior restraint" in " ".join(record.passages)
+
+
+def test_a_withdrawn_opinion_is_not_in_force() -> None:
+    """The corpus recorded Bernstein as in_force. The Ninth Circuit's own order
+    says otherwise: "The three-judge panel opinion ... is withdrawn.\""""
+
+    from legal_research.citations.corpus import AuthorityStatus, load_corpus
+
+    record = next(
+        r for r in load_corpus("data/corpus/openweights.jsonl").records
+        if r.id == "bernstein-9th-1999"
+    )
+
+    assert record.status is AuthorityStatus.WITHDRAWN
+    assert "192 F.3d 1308" in record.status_note
+    # And the order that withdrew it is citable in its own right.
+    order = next(
+        r for r in load_corpus("data/corpus/openweights.jsonl").records
+        if r.id == "f3d-192-1308"
+    )
+    assert any("is withdrawn" in p for p in order.passages)

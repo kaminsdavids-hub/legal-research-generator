@@ -1,0 +1,118 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "ee3605b4e0b4",
+        "type": "thesis",
+        "text": "Publishing open model weights is not a deemed export under the EAR.",
+        "provenance": "human",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "05d56fb42bf5",
+        "type": "objection",
+        "text": "The strongest objection is that weights are functional artifacts rather than published information.",
+        "provenance": "human",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "6928fe63fc4b",
+        "type": "premise",
+        "text": "The strongest objection is that publishing model weights does not constitute 'publishing' as it requires dissemination to the public, while weights are proprietary and confidential.",
+        "provenance": "dialectic",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "0758bf00d9e1",
+        "type": "premise",
+        "text": "Weights may be considered functional artifacts rather than published information since they are used internally in a product's operation.",
+        "provenance": "dialectic",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "a59f4711c4c7",
+        "type": "objection",
+        "text": "The EAR's definition of 'technical data' includes information concerning the function of any electronic circuit, component, or software, which would encompass model weights.",
+        "provenance": "dialectic",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "81b2ae59d4ce",
+        "type": "objection",
+        "text": "Publishing model weights could be seen as a form of 'technical assistance' under the EAR, which is also subject to export controls.",
+        "provenance": "dialectic",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "6eb90eaac51d",
+        "type": "objection",
+        "text": "The fact that model weights are used internally in a product's operation does not necessarily mean they are not 'published' for purposes of the EAR, as the regulation focuses on the act of making information available, not its intended use.",
+        "provenance": "dialectic",
+        "section": "",
+        "citation": "",
+        "verified": false
+      }
+    ],
+    "edges": [
+      {
+        "source": "05d56fb42bf5",
+        "target": "ee3605b4e0b4",
+        "type": "attacks"
+      },
+      {
+        "source": "6928fe63fc4b",
+        "target": "05d56fb42bf5",
+        "type": "supports"
+      },
+      {
+        "source": "0758bf00d9e1",
+        "target": "05d56fb42bf5",
+        "type": "supports"
+      },
+      {
+        "source": "a59f4711c4c7",
+        "target": "05d56fb42bf5",
+        "type": "attacks"
+      },
+      {
+        "source": "81b2ae59d4ce",
+        "target": "05d56fb42bf5",
+        "type": "attacks"
+      },
+      {
+        "source": "6eb90eaac51d",
+        "target": "05d56fb42bf5",
+        "type": "attacks"
+      }
+    ]
+  },
+  "asked": [
+    "uncontested_claim:ee3605b4e0b4"
+  ],
+  "barren": [],
+  "pending": {
+    "text": "You raise this objection and leave it standing: \u201cThe strongest objection is that weights are functional artifacts rather than published information.\u201d What is your answer to it \u2014 and if you do not have one, is the claim it attacks still one you want to make?",
+    "phrasing": "template",
+    "gap": {
+      "kind": "unanswered_attack",
+      "node_ids": [
+        "05d56fb42bf5",
+        "ee3605b4e0b4"
+      ],
+      "detail": "this objection has no reply",
+      "section": ""
+    }
+  }
+}

@@ -28,7 +28,8 @@ dependencies = [
 # Real local embedding retrieval (optional; the mock retriever needs none of this).
 gpu = [
     "faiss-cpu==1.9.0.post1",
-    "sentence-transformers==3.3.1",
+    "sentence-transformers>=5.4.1,<6",
+    "transformers>=5.2.0,<6",
 ]
 # HTML -> PDF rendering backends (optional; renderer falls back to HTML if absent).
 pdf = [
@@ -51,7 +52,7 @@ lrg-demo = "legal_research.demo:main"
 lrg-ingest = "legal_research.ingest.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/legal_research"]
+packages = ["src/legal_research", "modules"]
 
 [tool.pytest.ini_options]
 addopts = "-ra -q"

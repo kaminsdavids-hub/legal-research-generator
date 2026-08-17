@@ -1,0 +1,22 @@
+{
+  "episodes": [
+    {
+      "gap_kind": "uncontested_claim",
+      "outcome": "answered",
+      "section": "",
+      "answer_words": 7
+    },
+    {
+      "gap_kind": "uncontested_claim",
+      "outcome": "answered",
+      "section": "",
+      "answer_words": 12
+    },
+    {
+      "gap_kind": "uncontested_claim",
+      "outcome": "answered",
+      "section": "",
+      "answer_words": 13
+    }
+  ]
+}

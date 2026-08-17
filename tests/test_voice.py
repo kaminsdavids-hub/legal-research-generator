@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from legal_research.voice.anti_ai_voice import Severity, lint_ai_voice
+from legal_research.voice.anti_ai_voice import Severity, lint_ai_voice, rewrite_for_voice
 from legal_research.voice.anti_template import structural_overlap, template_violations
 
 CLEAN = (
@@ -67,3 +67,35 @@ def test_anti_template_allows_distinct_papers() -> None:
     b = "Leverage ratios constrain bank balance sheets independent of internal risk models."
     assert structural_overlap(a, b) < 0.35
     assert template_violations({"a": a, "b": b}) == []
+
+
+def test_rewrite_preserves_paragraph_breaks() -> None:
+    """The blanket whitespace collapse flattened every section it touched: a
+    2,647-word manuscript reached the renderer as six 400-word paragraphs, and
+    every paragraph-indexed stage downstream was really operating on sections."""
+
+    text = (
+        "Moreover, the first paragraph makes its point. It does so at length, "
+        "with some variety in how the sentences run.\n\n"
+        "Furthermore, the second paragraph answers it. In conclusion, the two "
+        "together state the argument the section was drafted to carry."
+    )
+    out = rewrite_for_voice(text)
+
+    assert out.count("\n\n") == 1
+    assert len(_split(out)) == 2
+    assert "second paragraph answers it" in out
+
+
+def test_cadence_fix_does_not_merge_across_a_paragraph_break() -> None:
+    metronome = " ".join(f"The court ruled on point number {i} today." for i in range(1, 6))
+    out = rewrite_for_voice(f"{metronome}\n\n{metronome}")
+
+    assert out.count("\n\n") == 1
+    assert all(part.strip() for part in _split(out))
+
+
+def _split(text: str) -> list[str]:
+    import re
+
+    return [p for p in re.split(r"\n\s*\n", text) if p.strip()]

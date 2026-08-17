@@ -1,0 +1,48 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "c2264e537f08",
+        "type": "thesis",
+        "text": "Publishing open model weights is not a deemed export under the EAR.",
+        "provenance": "human",
+        "section": "",
+        "citation": "",
+        "verified": false
+      },
+      {
+        "id": "982a6d1b4ad0",
+        "type": "objection",
+        "text": "The strongest objection is that weights are functional artifacts, not published information.",
+        "provenance": "human",
+        "section": "",
+        "citation": "",
+        "verified": false
+      }
+    ],
+    "edges": [
+      {
+        "source": "982a6d1b4ad0",
+        "target": "c2264e537f08",
+        "type": "attacks"
+      }
+    ]
+  },
+  "asked": [
+    "uncontested_claim:c2264e537f08"
+  ],
+  "barren": [],
+  "pending": {
+    "text": "You raise this objection and leave it standing: \u201cThe strongest objection is that weights are functional artifacts, not published information.\u201d What is your answer to it \u2014 and if you do not have one, is the claim it attacks still one you want to make?",
+    "phrasing": "template",
+    "gap": {
+      "kind": "unanswered_attack",
+      "node_ids": [
+        "982a6d1b4ad0",
+        "c2264e537f08"
+      ],
+      "detail": "this objection has no reply",
+      "section": ""
+    }
+  }
+}

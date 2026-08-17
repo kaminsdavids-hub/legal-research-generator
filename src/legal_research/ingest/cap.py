@@ -34,17 +34,37 @@ class CapIngestor:
         return ""
 
     def _opinion_text(self, case: dict[str, Any]) -> str:
+        """The court's opinion — **the majority only**, when the case labels one.
+
+        A dissent is not authority for anything, and a concurrence is authority
+        only for itself. Joining all three into one blob, which this did, makes
+        their language indistinguishable once it is chunked into passages: the
+        verifier would confirm a quotation as verbatim and present a dissent's
+        reasoning as the holding, and every check in this system would pass,
+        because the sentence really is in the record.
+
+        *Bernstein* is the case that surfaced it — 176 F.3d 1132 carries a
+        majority, a concurrence and a dissent, and the dissent argues the
+        opposite of what the paper citing it would claim.
+
+        Cases with no typed opinions (older CAP records) fall back to everything,
+        which is the previous behaviour and no worse than it was.
+        """
+
         casebody = case.get("casebody") or {}
         data = casebody.get("data", casebody)
         if isinstance(data, str):
             return normalize_ws(data)
         if isinstance(data, dict):
-            opinions = data.get("opinions") or []
-            texts = [
+            opinions = [o for o in (data.get("opinions") or []) if isinstance(o, dict)]
+            majority = [
                 normalize_ws(o.get("text", ""))
                 for o in opinions
-                if isinstance(o, dict) and o.get("text")
+                if o.get("text") and str(o.get("type", "")).lower() == "majority"
             ]
+            if majority:
+                return "\n\n".join(majority)
+            texts = [normalize_ws(o.get("text", "")) for o in opinions if o.get("text")]
             if texts:
                 return "\n\n".join(texts)
             head = data.get("head_matter")

@@ -1,0 +1,534 @@
+# Real cases coded into the feature schema.
+#
+# TWO DIFFERENT TRUST QUESTIONS, kept apart on every record:
+#
+#   citation_source — where the citation came from. Every case below was
+#     confirmed against the Caselaw Access Project bulk data (static.case.law):
+#     the reporter volume was fetched and the page checked to carry that case
+#     name. So the citations are facts, not recollections.
+#
+#   coding — where the *coding* came from. Every record below is `model_draft`:
+#     a model placed the case on these axes and NOBODY HAS CHECKED IT. That is
+#     the whole cost of this file, and it is not something fetching can solve.
+#     Reading the case and deciding whether it really sits at
+#     `harm_proximity: imminent` is scholarship.
+#
+# CONSEQUENCE: precedent collisions stay switched off. `match_precedents` and
+# `graph_adapter.emit_precedents` both refuse an unverified coding, because the
+# force of that finding is "your framework misclassifies a decided case", which
+# is worth nothing if the coding was guessed. Verify a record — read the case,
+# fix the axes, set `coding: model_verified` and `coded_by: <name>` — and it
+# starts producing collisions.
+#
+# TWO KINDS OF BLANK, and they are not the same claim. Both are legal values on
+# any axis of a coded case, and both are wildcards in distance, so neither ever
+# pushes a case out of matching range.
+#
+#   undetermined — the source could have said and didn't. A hole in the record.
+#     It lowers `determinacy`, and a record answering under 3/4 of its applicable
+#     axes cannot anchor a precedent: bernstein-9th-1999 and
+#     pentagon-papers-1971 both fall there, each because the court decided one
+#     narrow thing and said nothing else. Such a case is reported as a research
+#     lead — settle what the record leaves open and it may yet govern.
+#
+#   inapplicable — the question does not arise. Bartnicki is about an intercepted
+#     phone call; there is no artifact whose capability could be graded, and no
+#     amount of reading will produce one. So it leaves the determinacy
+#     denominator rather than lowering the score, and is never filed as a lead.
+#     The guard against abusing that is `applicability`: a case where too many
+#     axes do not arise is not incompletely read, it is a case about something
+#     this schema does not describe, and the matcher reports it as off-schema.
+#
+# `capability_tier` is blank on all 15 judicial records, and the split between
+# the two blanks is the substantive claim. No opinion grades an artifact on a
+# five-point capability scale — the scale postdates them all — but the seven
+# cases about a *means of doing something* (encryption code, DeCSS, an H-bomb
+# design, a murder manual, terrorist training) have a capability the courts
+# happened not to quantify, while the eight about *information* (a policy
+# history, a scandal sheet, a memoir, a phone call, a prescriber database, a
+# video game, a depiction) have none to quantify. The axis is otherwise carried
+# by the two regulatory instruments, which do set thresholds.
+#
+# WHAT IS NOT HERE, and why. 31 leading First Amendment and export-control
+# citations were confirmed; 15 are coded below, alongside 2 regulatory
+# instruments whose citations CAP cannot confirm. The rest were dropped because
+# this schema is about distributing a technical artifact, and forcing a case
+# onto axes it has no position on manufactures data:
+#
+#   Texas v. Johnson (491 U.S. 397) · R.A.V. v. St. Paul (505 U.S. 377) ·
+#   Brandenburg v. Ohio (395 U.S. 444) · Ward v. Rock Against Racism (491 U.S. 781)
+#     — expressive conduct or incitement; no distribution modality at all.
+#   Turner Broadcasting (512 U.S. 622) · Reno v. ACLU (521 U.S. 844) ·
+#   Sable Communications (492 U.S. 115) · Ashcroft v. ACLU (542 U.S. 656) ·
+#   Freedman v. Maryland (380 U.S. 51) · City of Lakewood (486 U.S. 750)
+#     — carriage, broadcast and licensing; the artifact is not the thing
+#       restricted, so `distribution_modality` has no honest value.
+#   Golan v. Holder (565 U.S. 302) · Haig v. Agee (453 U.S. 280) ·
+#   Va. Pharmacy (425 U.S. 748) · Central Hudson (447 U.S. 557) ·
+#   Ashcroft v. Free Speech Coalition (535 U.S. 234)
+#     — copyright, travel, and commercial speech; off-axis.
+#   United States v. O'Brien (391 U.S. 367)
+#     — draft-card burning. Cited by half the opinions below as the framework
+#       for an incidental burden, but it distributes nothing, so it belongs in
+#       the rules rather than the corpus.
+#
+# An 8-axis schema fitting 15 of 31 leading cases is itself a finding: the axes
+# are tuned to technical-artifact distribution, which is what the project is
+# about, and the corpus should not be padded to look bigger than the schema is.
+
+cases:
+  # --- code and technical data: the cases nearest the project ---------------
+  - id: junger-6th-2000
+    citation: 209 F.3d 481
+    name: Junger v. Daley
+    # Deliberately empty: the Sixth Circuit held source code is protected
+    # speech and remanded everything else, so there is no holding on validity
+    # for a reading to contradict. `match_precedents` reads an empty outcome as
+    # "matches, contradicts nothing", which is exactly the case's posture.
+    # Setting `uncertain` here would mark every confident reading as refuted by
+    # a case that refuted nothing. See data/reviews/junger-6th-2000.md.
+    outcome: ""
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Law professor sought to post encryption source code; Sixth Circuit held
+      source code is protected expression and remanded for consideration of the
+      amended regulations. Checked axis-by-axis against the full opinion —
+      review at data/reviews/junger-6th-2000.md — which corrected `outcome`
+      (was permitted; nothing was permitted) and `restriction_type` (was
+      content_based; the panel framed the analysis under O'Brien intermediate
+      scrutiny). Reading the opinion is not the human confirmation
+      `model_verified` asserts, so this stays a draft. `capability_tier` and
+      `harm_proximity` are `undetermined`: the opinion states no key length or
+      algorithm for any of the five programs, and the panel held the record did
+      not resolve how proximate the harm was. At 6 of 8 axes answered this
+      still clears the determinacy floor for anchoring a precedent.
+    features:
+      distribution_modality: training_code
+      actor_type: academic
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: public_repository
+
+  - id: bernstein-9th-1999
+    citation: 176 F.3d 1132
+    name: Bernstein v. United States Department of Justice
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      WITHDRAWN on rehearing en banc, 192 F.3d 1308. Coded for exploration only: a
+      collision built on it would cite an opinion that was un-issued. Verify the
+      withdrawal before ever promoting this record. RECORD SILENT on three axes,
+      which is why this now falls below the determinacy floor: the panel wrote that
+      it would "limit our attention here, for the most part, to only one" theory --
+      prior restraint and its procedural safeguards -- so it never reached whether
+      the EAR are content-based, and it recited the "direct, immediate, and
+      irreparable damage" standard without applying it. No capability fact appears.
+    features:
+      distribution_modality: training_code
+      actor_type: academic
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_federal
+      restriction_type: undetermined
+      forum: journal
+
+  - id: karn-ddc-1996
+    citation: 925 F. Supp. 1
+    name: Karn v. U.S. Department of State
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Export licence denied for a diskette carrying cryptographic source code that was
+      freely published in book form. DRAFT: `actor_type: hobbyist` is shaky -- Karn was
+      an individual engineer, which the axis has no value for; that is a gap in the axis,
+      not a silence in the record. RECORD SILENT on `capability_tier` (no algorithm or
+      key length stated) and on `harm_proximity`: the court applied O'Brien to a
+      content-neutral regulation and found the national-security interest substantial
+      without ever locating the harm in time.
+    features:
+      distribution_modality: training_code
+      actor_type: hobbyist
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: private_transfer
+
+  - id: corley-2d-2001
+    citation: 273 F.3d 429
+    name: Universal City Studios, Inc. v. Corley
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      DeCSS posting; Second Circuit treated the DMCA anti-trafficking provision as
+      content-neutral as applied to code's functional component. DRAFT: the
+      functional/expressive split here is the single most load-bearing coding judgement
+      in this file -- read it before trusting `incidental`. CORRECTED: `harm_proximity`
+      was `foreseeable`; the opinion says "dissemination itself carries very substantial
+      risk of imminent harm because the mechanism is so unusual". RECORD SILENT on
+      `capability_tier`.
+    features:
+      distribution_modality: training_code
+      actor_type: firm
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: imminent
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: public_repository
+
+  # --- dangerous technical information -------------------------------------
+  - id: progressive-wdwis-1979
+    citation: 467 F. Supp. 990
+    name: United States v. Progressive, Inc.
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Injunction against publishing an H-bomb article. The nearest analogue in the corpus
+      to a capability-transfer claim, and the reason `capability_tier` is an axis at all
+      -- which makes it the sharpest illustration that the axis is unanswerable from a
+      judicial record: the court found "immediate, direct and irreparable harm" and
+      described the article as synthesised technical data, but nothing in it grades the
+      artifact, so `capability_tier` is now `undetermined`. Case became moot before
+      appellate review.
+    features:
+      distribution_modality: paper
+      actor_type: firm
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: imminent
+      jurisdiction: us_federal
+      restriction_type: content_based
+      forum: journal
+
+  - id: rice-4th-1997
+    citation: 128 F.3d 233
+    name: Rice v. Paladin Enterprises, Inc.
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Publisher liability for a murder manual; the court found the speech unprotected on a
+      stipulated intent to assist crime. DRAFT: the stipulation is doing the work, which no
+      axis here captures. CORRECTED: `restriction_type` was `content_based`; the court
+      grounded liability in conduct "regulated incidentally to the constitutional
+      enforcement of generally applicable statutes". RECORD SILENT on `harm_proximity` --
+      and pointedly so, since the court held Brandenburg imminence "relevant for
+      constitutional purposes only where ... the government attempts to restrict advocacy,
+      as such", i.e. that this axis does not govern the case at all.
+    features:
+      distribution_modality: paper
+      actor_type: firm
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: journal
+
+  - id: hlp-2010
+    citation: 561 U.S. 1
+    name: Holder v. Humanitarian Law Project
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Material-support bar applied to training and expert advice given to a designated
+      organisation. The closest case in the corpus to "the recipient decides the question",
+      which is the deemed_export reading's premise. The Court held "§ 2339B regulates
+      speech on the basis of its content", so `content_based` is the opinion's own word.
+      RECORD SILENT on `capability_tier`.
+    features:
+      distribution_modality: training_code
+      actor_type: foreign_state_entity
+      capability_tier: undetermined
+      post_release_modification: none
+      harm_proximity: foreseeable
+      jurisdiction: us_federal
+      restriction_type: content_based
+      forum: private_transfer
+
+  # --- prior restraint on publication --------------------------------------
+  - id: pentagon-papers-1971
+    citation: 403 U.S. 713
+    name: New York Times Co. v. United States
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Per curiam: the Government "carries a heavy burden of showing justification" and did
+      not meet it. RECORD SILENT on three axes, which drops this below the determinacy
+      floor -- and that is the honest description of a three-paragraph per curiam. It
+      allocated a burden and decided nothing else; the six concurrences that discuss harm
+      and content command no majority, and a coding may not launder a concurrence into a
+      holding. `harm_proximity` was `foreseeable`, which inverted the result.
+      `capability_tier` is `inapplicable`, not merely unstated: the study was a history of
+      decision-making, and a narrative of what officials did has no capability to grade. The
+      other two blanks are genuine silences -- the Court could have reached them.
+    features:
+      distribution_modality: paper
+      actor_type: firm
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_federal
+      restriction_type: undetermined
+      forum: journal
+
+  - id: near-1931
+    citation: 283 U.S. 697
+    name: Near v. Minnesota ex rel. Olson
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Prior restraint of a scandal sheet as a public nuisance; the statute reached any
+      "malicious, scandalous and defamatory" periodical. RECORD SILENT on
+      `capability_tier` and `harm_proximity`: the Court held the statute unconstitutional
+      on its face and made no finding about what the Saturday Press would cause.
+      `restriction_type: content_based` is kept as a description of a statute that sorted
+      publications by what they said, but 1931 predates the content-based/content-neutral
+      framework and the opinion never uses it -- an anachronism a human should rule on.
+      `capability_tier` is `inapplicable`: a scandal sheet conveys allegations, not a means
+      of doing anything, so there is nothing for the axis to measure.
+    features:
+      distribution_modality: paper
+      actor_type: firm
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_state
+      restriction_type: content_based
+      forum: journal
+
+  - id: marchetti-4th-1972
+    citation: 466 F.2d 1309
+    name: United States v. Marchetti
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Prepublication review enforced against a former intelligence officer on a contractual
+      theory. DRAFT: the secrecy agreement, not the content, is the operative fact and no
+      axis holds it. That is also why `restriction_type` is now `undetermined`: the court
+      analysed a secrecy agreement and a fiduciary relation, not a speech regulation, so
+      neither `content_based` nor `incidental` describes what was upheld. `harm_proximity`
+      stays `foreseeable` on the court's own words -- "the risk of harm from disclosure is
+      so great". RECORD SILENT on `capability_tier`.
+      Both blanks are `inapplicable` rather than silences. The court analysed a secrecy
+      agreement and a fiduciary relation, so `restriction_type` has no value here -- neither
+      `content_based` nor `incidental` describes enforcing a contract -- and an account of
+      Agency operations has no capability tier. Reading further will not fill either in.
+    features:
+      distribution_modality: paper
+      actor_type: hobbyist
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: foreseeable
+      jurisdiction: us_federal
+      restriction_type: inapplicable
+      forum: journal
+
+  - id: snepp-1980
+    citation: 444 U.S. 507
+    name: Snepp v. United States
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Constructive trust on a former CIA agent's book proceeds for breach of a
+      prepublication-review agreement. `harm_proximity: foreseeable` rests on the affirmed
+      finding that publication "inflicted irreparable harm on intelligence activities vital
+      to our national security". RECORD SILENT on `restriction_type` -- the holding is
+      contract and fiduciary duty, not a First Amendment category -- and on
+      `capability_tier`.
+      Both blanks are `inapplicable` for the same reason as Marchetti: a constructive trust
+      for breach of a prepublication-review agreement is not a speech regulation with a
+      content character, and a memoir has no capability tier.
+    features:
+      distribution_modality: paper
+      actor_type: hobbyist
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: foreseeable
+      jurisdiction: us_federal
+      restriction_type: inapplicable
+      forum: journal
+
+  # --- data, software and expression ---------------------------------------
+  - id: sorrell-2011
+    citation: 564 U.S. 552
+    name: Sorrell v. IMS Health Inc.
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Prescriber-identifying data as protected speech. DRAFT: coded
+      `distribution_modality: weights` on the theory that a dataset is the nearest analogue
+      to model weights -- that is an argument, not an observation, and it is exactly the
+      kind of coding a human must confirm. `content_based` is the Court's own
+      characterisation ("an aimed, content-based burden on detailers"). RECORD SILENT on
+      `harm_proximity` (the Court struck the law and made no harm finding) and on
+      `capability_tier`.
+      `capability_tier` is `inapplicable`: prescriber-identifying data reports what
+      physicians did, and the axis grades what an artifact can do. `harm_proximity` stays a
+      genuine silence.
+    features:
+      distribution_modality: weights
+      actor_type: firm
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_state
+      restriction_type: content_based
+      forum: private_transfer
+
+  - id: brown-ema-2011
+    citation: 564 U.S. 786
+    name: Brown v. Entertainment Merchants Ass'n
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Violent video games are protected expression; new media get no reduced protection.
+      Coded as software distribution to a general audience. `harm_proximity: remote` rests
+      on the Court's statement that California "cannot show a direct causal link between
+      violent video games and harm to minors". RECORD SILENT on `capability_tier`.
+      `capability_tier` is `inapplicable`: an entertainment work is not a means of doing
+      anything the axis measures.
+    features:
+      distribution_modality: training_code
+      actor_type: firm
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: remote
+      jurisdiction: us_state
+      restriction_type: content_based
+      forum: public_repository
+
+  - id: bartnicki-2001
+    citation: 532 U.S. 514
+    name: Bartnicki v. Vopper
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Publication of an illegally intercepted call about a labour dispute. CORRECTED:
+      `restriction_type` was `content_based`; the Court held "§ 2511(1)(c) ... is in fact a
+      content-neutral law of general applicability". `harm_proximity: remote` rests on the
+      Court's demand that the justification be "far stronger than mere speculation about
+      serious harms". RECORD SILENT on `capability_tier`.
+      `capability_tier` is `inapplicable`: the artifact is a recording of a conversation.
+      There is no capability, which is a different fact from the Court having failed to
+      mention one.
+    features:
+      distribution_modality: paper
+      actor_type: firm
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: remote
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: journal
+
+  - id: stevens-2010
+    citation: 559 U.S. 460
+    name: United States v. Stevens
+    outcome: permitted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cap-static.case.law
+    note: >
+      Refused to create a new category of unprotected speech by balancing costs against
+      benefits -- directly relevant to any argument that weights are categorically outside
+      the First Amendment. RECORD SILENT on `harm_proximity`: the statute fell as
+      substantially overbroad, and the Court reached no question about what depictions of
+      animal cruelty cause. RECORD SILENT on `capability_tier`.
+      `capability_tier` is `inapplicable`: a depiction of conduct conveys what happened, not
+      a means of doing it. `harm_proximity` stays a genuine silence -- the statute fell as
+      overbroad before any such question.
+    features:
+      distribution_modality: paper
+      actor_type: hobbyist
+      capability_tier: inapplicable
+      post_release_modification: none
+      harm_proximity: undetermined
+      jurisdiction: us_federal
+      restriction_type: content_based
+      forum: public_repository
+
+  # --- the regulatory instruments the readings formalise --------------------
+  - id: ear-diffusion-2025
+    citation: 90 Fed. Reg. 4544
+    name: Framework for Artificial Intelligence Diffusion
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: federal-register-not-in-cap
+    note: >
+      Not a case and not in CAP; the citation has NOT been machine-confirmed. Kept because
+      the readings formalise it, but it needs a human to check the Federal Register page as
+      well as the coding. `capability_tier: 5` is kept rather than made `undetermined`
+      because this instrument, unlike every opinion in the file, sets numeric compute
+      thresholds -- but nobody has read those thresholds against this scale, so it is a
+      draft like the rest.
+    features:
+      distribution_modality: weights
+      actor_type: firm
+      capability_tier: "5"
+      post_release_modification: none
+      harm_proximity: foreseeable
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: private_transfer
+
+  - id: deemed-export-rule
+    citation: 15 C.F.R. 734.13
+    name: Export - release of technology or source code to a foreign person
+    outcome: restricted
+    coding: model_draft
+    coded_by: ""
+    citation_source: cfr-not-in-cap
+    note: >
+      Not a case and not in CAP; citation not machine-confirmed. The rule the deemed_export
+      reading formalises. CORRECTED to `undetermined`: `post_release_modification` was
+      `alignment_removal`, which appears nowhere in a provision that defines when releasing
+      technology to a foreign person counts as an export. The rule is silent about what is
+      done with the thing afterwards.
+      On reflection `post_release_modification` is `inapplicable` rather than silent: a
+      provision defining when a release counts as an export has no occasion to address what
+      is done with the technology afterwards, so no amount of further reading would supply a
+      value.
+    features:
+      distribution_modality: weights
+      actor_type: foreign_state_entity
+      capability_tier: "4"
+      post_release_modification: inapplicable
+      harm_proximity: imminent
+      jurisdiction: us_federal
+      restriction_type: incidental
+      forum: private_transfer

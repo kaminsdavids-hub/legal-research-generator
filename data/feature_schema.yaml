@@ -1,0 +1,30 @@
+# Feature schema for the open-weights / First Amendment project.
+#
+# Author-authored. A model may propose axes; a human freezes this file, and its
+# sha256 is stamped on every artifact so results produced under different
+# schemas can never be compared.
+axes:
+  - name: distribution_modality
+    kind: categorical
+    values: [weights, training_code, api, paper]
+  - name: actor_type
+    kind: categorical
+    values: [academic, hobbyist, firm, foreign_state_entity]
+  - name: capability_tier
+    kind: ordinal
+    values: ["1", "2", "3", "4", "5"]
+  - name: post_release_modification
+    kind: categorical
+    values: [none, fine_tune, alignment_removal]
+  - name: harm_proximity
+    kind: ordinal
+    values: [remote, foreseeable, imminent]
+  - name: jurisdiction
+    kind: categorical
+    values: [us_federal, us_state, eu, other]
+  - name: restriction_type
+    kind: categorical
+    values: [content_based, incidental]
+  - name: forum
+    kind: categorical
+    values: [public_repository, journal, conference, private_transfer]

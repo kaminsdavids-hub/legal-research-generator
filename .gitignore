@@ -15,6 +15,11 @@ venv/
 .env
 .env.local
 *.local
+# Backups carry the same LRG_LLM_API_KEY the live file does; `.env` alone
+# does not cover them, and a rotated-out key in history is still a leak.
+.env.bak
+.env.bak-*
+.env.*.bak
 
 # Node / Next.js
 node_modules/
@@ -37,3 +42,11 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Local Netlify folder
+.netlify
+
+# Search artifacts: reproducible from the stamped recipe, and large.
+*.collisions.json
+*.report.json
+.casework/

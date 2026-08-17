@@ -53,6 +53,12 @@ class BrainstormRole(str, Enum):
 class Idea(BaseModel):
     id: str
     text: str
+    #: The one-sentence assertion this idea makes, as opposed to the topic
+    #: `text` names. Retrieval and verification need something a source can
+    #: support: "Analyze how weights are treated" cannot be entailed by
+    #: anything, while "Weights are published information under the EAR" can.
+    #: Empty when the generator produced only a topic (REMEDIATION §25).
+    claim: str = ""
     angle: str = ""
     novelty_note: str = ""
     status: IdeaStatus = IdeaStatus.CANDIDATE
@@ -103,6 +109,12 @@ class VerificationResult(BaseModel):
     status: CiteStatus
     reason: str
     supporting_passage: str = ""
+    #: "entailed" | "rule_support" | "none". A verified citation is not one
+    #: thing: entailment means the passage makes the proposition true, while
+    #: rule support means it states the rule the proposition applies and the
+    #: application step is the author's. Merging them would hide the weaker
+    #: claim behind the stronger word.
+    relation: str = "none"
 
 
 class EditRecord(BaseModel):
@@ -130,3 +142,26 @@ class FootnoteRef(BaseModel):
     number: int
     text: str
     citation_id: str
+
+
+class MechanismFinding(BaseModel):
+    """One passage whose argument rests on an operation it never states.
+
+    Produced by :mod:`legal_research.mechanism`. ``resolved`` records whether the
+    gate's repair pass actually fixed it — verified by re-scanning the rewrite,
+    not by the rewriting model's own account of its work. Unresolved findings
+    stay on the blackboard and in the verification report: a defect the gate
+    could not repair is a fact about the manuscript, not a stage that failed.
+    """
+
+    section_id: str
+    section_title: str = ""
+    paragraph_index: int = 0
+    #: "BLACK_BOX" (no structure anywhere near) or "UNDER_SPECIFIED" (too thin).
+    severity: str
+    term: str = ""
+    reason: str = ""
+    excerpt: str = ""
+    #: "lexical" (deterministic scan) or "semantic" (LLM critic).
+    source: str = "lexical"
+    resolved: bool = False

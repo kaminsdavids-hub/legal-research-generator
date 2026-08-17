@@ -16,17 +16,129 @@ from .base import Agent, AgentContext, AgentResult
 
 SUPPORT_CUTOFF = 0.34
 
+#: Openers that mark a research *topic* rather than an assertable claim. The
+#: Ideator emits titles -- "Analyzing the Impact of X: A Case Study" -- which are
+#: serviceable retrieval queries and impossible entailment targets: asking an NLI
+#: model whether a passage entails a title returns ~0 by construction. A live
+#: pipeline run removed 122 of 122 citations that way, every one of them for
+#: "source does not support the proposition" (REMEDIATION §22).
+#: Gerund *and* imperative forms. A gerund-only list let "Analyze how model
+#: weights could be treated..." through as a claim, and it became the only
+#: proposition that "verified" in a live run -- a title matching a passage on
+#: shared vocabulary, which is precisely what this check exists to stop.
+#:
+#: Written out rather than generated from stems: generating "review" + suffixes
+#: produced "reviewe"/"reviewes" and never the base form, so the word the
+#: Ideator actually uses was the one form not covered.
+_TOPIC_OPENERS = (
+    "analyze ", "analyzes ", "analyzing ", "analyse ", "analysing ",
+    "investigate ", "investigates ", "investigating ",
+    "explore ", "explores ", "exploring ",
+    "examine ", "examines ", "examining ",
+    "assess ", "assesses ", "assessing ",
+    "evaluate ", "evaluates ", "evaluating ",
+    "understand ", "understanding ",
+    "compare ", "compares ", "comparing ",
+    "revisit ", "revisiting ", "rethink ", "rethinking ",
+    "consider ", "considering ", "discuss ", "discussing ",
+    "review ", "reviews ", "reviewing ", "survey ", "surveying ",
+    "identify ", "identifying ", "describe ", "describing ",
+    "outline ", "outlining ",
+    "towards", "toward", "a study", "a case study", "an analysis", "an overview",
+    "the role of", "the impact of", "the case for", "the future of",
+    "how ", "why ", "whether ", "what ",
+)
+
+#: Markers of a title even when it does not start with a gerund.
+_TOPIC_MARKERS = (": a case study", ": an analysis", ": implications", ": a survey")
+
+#: Nominalised topics: a noun phrase built around "implications of", "challenges
+#: of", "potential for". Live run 6 produced three of these as its top ideas --
+#: "Legal Challenges of Publishing Open-Source AI Models Under the EAR",
+#: "Economic Implications of Forcing Developers to Publish Source Code",
+#: "Potential for Creative Workarounds to Circumvent Regulatory Hurdles" -- and
+#: not one starts with a gerund or carries a colon, so nothing above caught them.
+#:
+#: These are substrings, not prefixes: the nominalisation is what makes it a
+#: title, and it sits in the middle as often as at the front.
+#:
+#: A general test would be "does this have a finite verb", and that was tried:
+#: a closed verb list rejected "Restrictions on AI research infringe information
+#: rights" because `infringe` was not in it. Without a part-of-speech tagger the
+#: detector rejects more real claims than titles, and a rejected claim is not
+#: free -- it costs the citation the paper's thesis as its proposition. So this
+#: stays a list of observed shapes, and the claim-recovery pass plus the thesis
+#: fallback are what contain the ones it misses.
+#: The scaffold's own headings. A section with no ideas attached takes its title
+#: as the point its paragraphs are drafted from, so "Conclusion" was put to the
+#: retriever as a proposition and three of run 7's thirteen citations were filed
+#: against it. A heading is the least assertable string in the manuscript: it
+#: predicates nothing at all.
+_STRUCTURAL_HEADINGS = frozenset(
+    {
+        "introduction", "conclusion", "background", "analysis", "discussion",
+        "summary", "overview", "abstract", "roadmap", "counterargument",
+        "rebuttal", "counterargument and rebuttal", "table of authorities",
+        "background and governing standard",
+    }
+)
+
+#: Fewer words than this and there is no subject-predicate pair to test. Set at
+#: four rather than the six a full claim usually needs: the cost of rejecting a
+#: real short claim is a citation filed against the thesis instead, and "Model
+#: weights are published information" is five words and perfectly assertable.
+MIN_CLAIM_WORDS = 4
+
+_NOMINALISED_TOPICS = (
+    " implications of ",
+    " challenges of ",
+    " potential for ",
+    " need for ",
+    " question of ",
+    " overview of ",
+    " landscape of ",
+    " confrontation between ",
+)
+
+
+def is_assertable(text: str) -> bool:
+    """Whether *text* is a claim a source could support, rather than a topic.
+
+    Deliberately conservative: it only rejects the shapes the Ideator actually
+    produces. A false negative costs a citation the thesis as its proposition,
+    which is still true of the paper; a false positive puts a title back in front
+    of the entailment check, which is the failure this exists to stop.
+    """
+    stripped = " ".join(text.strip().split()).lower()
+    if not stripped:
+        return False
+    if stripped.strip(".:;-—") in _STRUCTURAL_HEADINGS:
+        return False
+    if len(stripped.split()) < MIN_CLAIM_WORDS:
+        return False
+    if stripped.startswith(_TOPIC_OPENERS):
+        return False
+    if any(marker in stripped for marker in _TOPIC_MARKERS):
+        return False
+    return not any(topic in f" {stripped} " for topic in _NOMINALISED_TOPICS)
+
 
 class LegalResearcher(Agent):
     name = "Legal Researcher"
     expert_role = "saul"
 
     def act(self, ctx: AgentContext, **kwargs: Any) -> AgentResult:
-        propositions: list[str] = kwargs.get("propositions") or self._default_props(ctx)
+        queries: list[str] = kwargs.get("propositions") or self._default_props(ctx)
 
         bb = ctx.blackboard
-        for proposition in propositions:
-            hits = ctx.retriever.search(proposition, k=4)
+        for query in queries:
+            # The query and the proposition are not the same thing. A topic title
+            # retrieves usefully but cannot be entailed by anything, and it is the
+            # proposition that the Verifier later asks a source to support. When
+            # the query is a title, the claim the authority is actually being
+            # cited for is the paper's thesis.
+            proposition = query if is_assertable(query) else (bb.thesis or query)
+            hits = ctx.retriever.search(query, k=4)
             legal_hits = [
                 h
                 for h in hits
@@ -71,7 +183,10 @@ class LegalResearcher(Agent):
 
     def _default_props(self, ctx: AgentContext) -> list[str]:
         bb = ctx.blackboard
-        props = [i.text for i in bb.selected_ideas()]
+        # An idea's claim is what a source can support; its text is the topic
+        # that claim is about. Prefer the claim wherever the Ideator supplied
+        # one (REMEDIATION §25).
+        props = [i.claim or i.text for i in bb.selected_ideas()]
         if bb.thesis:
             props.insert(0, bb.thesis)
         return props or ["the governing legal standard"]

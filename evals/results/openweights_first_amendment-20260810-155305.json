@@ -1,0 +1,88 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 7.1,
+  "scored_count": 2,
+  "total_count": 2,
+  "cluster_means": {
+    "A": 7.1
+  },
+  "gate_failures": [],
+  "unscored_judge_failed": [],
+  "run_errors": {},
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis argument to its strongest form, considering commercial speech precedent and the compiler code analogy. It anticipates potential counterarguments by noting the functional test's importance in resolving the crux of whether these weights are truly expressive artifacts or mere tools. The crux identification is precise, focusing on the functional analysis as decisive. Synthesis acknowledges the split authority but leans towards a likely outcome favoring speech status based on precedent and Ninth Circuit tendencies."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in a reasonable steelman of both sides, though the antithesis arguments are not fully fleshed out. The authority hierarchy is correctly identified and weighted appropriately. Counterarguments anticipate some procedural issues but miss deeper constitutional challenges. Crux identification is strong, isolating key contradictions. Synthesis is disciplined and follows logically from the weighing of authorities."
+    }
+  ]
+}

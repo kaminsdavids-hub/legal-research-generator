@@ -140,9 +140,25 @@ def rewrite_for_voice(text: str, style_sample: str | None = None) -> str:
     clears the lint: strip clustered transitions, drop empty-summary filler, and, when
     sentence lengths are too uniform, collapse the middle sentences into one longer
     clause so the paragraph reads as short / long / short rather than a metronome.
+
+    **Paragraph breaks survive.** This function used to end with a blanket
+    ``\\s{2,} -> " "`` collapse, which treated the blank line between paragraphs
+    as stray whitespace. Every section the voice pass touched came out as one
+    block: a 2,647-word manuscript arrived at the renderer as six 400-word
+    paragraphs, the PDF rendered each section as a single wall of text, and every
+    later stage that works paragraph-by-paragraph -- the mechanism gate's repair,
+    the Socratic paragraph coach -- was silently operating on whole sections.
+    The cadence fixes are per paragraph for the same reason: sentence-length
+    variety is a property of a paragraph, and merging across a paragraph break
+    measures nothing.
     """
 
-    out = text
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    return "\n\n".join(_rewrite_paragraph(p) for p in paragraphs).strip()
+
+
+def _rewrite_paragraph(paragraph: str) -> str:
+    out = paragraph
     for t in TRANSITIONS:
         out = re.sub(rf"(?i)\b{re.escape(t)}\b,\s*", "", out)
     for phrase in EMPTY_SUMMARY:
@@ -155,4 +171,6 @@ def rewrite_for_voice(text: str, style_sample: str | None = None) -> str:
             middle = "; ".join(s.rstrip(".!?") for s in sents[1:-1])
             out = " ".join([head, f"{middle}." if middle else "", tail]).strip()
 
-    return re.sub(r"\s{2,}", " ", out).strip()
+    from ..citations.tokens import collapse_spacing
+
+    return collapse_spacing(out.replace("\n", " "))

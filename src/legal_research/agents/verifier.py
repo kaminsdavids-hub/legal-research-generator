@@ -27,16 +27,22 @@ class VerifierAgent(Agent):
         review = sum(1 for r in results if r.status == CiteStatus.NEEDS_REVIEW)
         bb.refresh_section_statuses()
 
+        # One evaluation, reported once: the summary line and the payload flag
+        # must not be able to disagree about whether the paper ships.
+        shippable = bb.is_shippable(
+            block_on_mechanism=bool(ctx.settings.mechanism_gate_blocks_ship)
+        )
+
         return AgentResult(
             agent=self.name,
             summary=(
                 f"verified {verified}, removed {removed}, needs-review {review} "
-                f"of {len(results)} citations; shippable={bb.is_shippable()}"
+                f"of {len(results)} citations; shippable={shippable}"
             ),
             payload={
                 "verified": verified,
                 "removed": removed,
                 "needs_review": review,
-                "shippable": bb.is_shippable(),
+                "shippable": shippable,
             },
         )

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from typing import Any
 
 from ..config import Settings, get_settings
 from ..models import Citation, CiteStatus, VerificationResult
@@ -20,7 +21,9 @@ from .corpus import Corpus, load_corpus
 from .retriever import Retriever
 from .support import (
     LexicalSupportScorer,
+    SupportRelation,
     SupportScorer,
+    assess_support,
     build_support_scorer,
     lexical_support,
 )
@@ -37,8 +40,7 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", text.lower())).strip()
 
 
-# Backwards-compatible alias: the lexical scorer now lives in ``support``. The
-# Verifier's support test is pluggable and defaults to this lexical scorer.
+# Backwards-compatible alias: the lexical scorer now lives in ``support``.
 support_score = lexical_support
 
 
@@ -47,20 +49,35 @@ def quote_is_exact(quote: str, passages: list[str]) -> bool:
     return any(norm_quote and norm_quote in _normalize(p) for p in passages)
 
 
+#: How many hits the guard considers before choosing. Wider than the old k=3
+#: because the passage that actually supported the paper's thesis sat at rank 4.
+GROUND_CANDIDATES = 6
+
+
 class CitationGuard:
     """Grounds propositions through the retriever; blocks ungrounded assertions."""
 
-    def __init__(self, retriever: Retriever, new_id: Callable[[], str]) -> None:
+    def __init__(
+        self,
+        retriever: Retriever,
+        new_id: Callable[[], str],
+        scorer: SupportScorer | None = None,
+        candidates: int = GROUND_CANDIDATES,
+    ) -> None:
         self._retriever = retriever
         self._new_id = new_id
+        #: Optional. Without it the guard cites the top-ranked hit, which is the
+        #: behaviour every run before this one had.
+        self._scorer = scorer
+        self._candidates = candidates
 
     def ground(self, proposition: str, quote: str | None = None) -> Citation:
-        hits = self._retriever.search(proposition, k=3)
+        hits = self._retriever.search(proposition, k=self._candidates)
         if not hits or hits[0].score < GROUND_THRESHOLD:
             raise GroundingError(
                 f"no corpus source supports proposition: {proposition!r}"
             )
-        best = hits[0]
+        best = self._best_supported(proposition, hits)
         return Citation(
             id=self._new_id(),
             record_id=best.record_id,
@@ -73,6 +90,50 @@ class CitationGuard:
             from_retrieval=True,
             status=CiteStatus.PENDING,
         )
+
+    def _best_supported(self, proposition: str, hits: list[Any]) -> Any:
+        """The retrieved passage that best supports the proposition.
+
+        Retrieval ranks by semantic similarity, which is topicality, not
+        support. Those differ in a way that decided every citation in nine live
+        runs: for the thesis "publishing open model weights is protected
+        expression, and the EAR may not treat that publication as a deemed
+        export", the ranking was
+
+            1. 0.504  Framework for AI Diffusion         (recites a fact)
+            2. 0.350  IEEPA informational materials      (recites a fact)
+            3. 0.340  Published information and software (recites a fact)
+            4. 0.313  Published information and software (STATES THE RULE)
+
+        Rank 4 is the EAR's published-information exclusion — the authority the
+        claim rests on. The guard took rank 1 and never reconsidered, so the
+        citation was bound to a fact about 4E091 at write time and the verifier
+        was left removing a cite that was wrong before it ever saw it. The
+        corpus had the answer, retrieval surfaced it, and the guard cited
+        something else.
+
+        Entailment wins over rule support, and rule support over neither; ties
+        go to the better-ranked hit, so retrieval still breaks the tie. Scoring
+        stops at the first entailment, because nothing below it can win.
+
+        Without a scorer this returns the top hit, exactly as before. That is
+        also the honest fallback: choosing on support requires measuring
+        support, and the lexical scorer cannot measure the second relation.
+        """
+
+        if self._scorer is None:
+            return hits[0]
+
+        fallback = None
+        for hit in hits:
+            assessment = assess_support(
+                self._scorer, proposition, [hit.text], retrieved_passage=hit.text
+            )
+            if assessment.relation is SupportRelation.ENTAILED:
+                return hit
+            if assessment.relation is SupportRelation.RULE_SUPPORT and fallback is None:
+                fallback = hit
+        return fallback or hits[0]
 
     @staticmethod
     def assert_grounded(citation: Citation) -> None:
@@ -92,10 +153,28 @@ class CitationVerifier:
         corpus: Corpus,
         support_threshold: float = SUPPORT_THRESHOLD,
         scorer: SupportScorer | None = None,
+        rule_relation: bool = True,
     ) -> None:
         self._corpus = corpus
         self._scorer: SupportScorer = scorer or LexicalSupportScorer(support_threshold)
         self._threshold = self._scorer.threshold
+        #: Accept a passage that states the rule a proposition applies, as a
+        #: separately-labelled and weaker relation. Pass ``False`` for
+        #: entailment only -- the behaviour before the relation existed, and the
+        #: right setting for anyone who wants the strict gate back.
+        self._rule_relation = rule_relation
+
+    @property
+    def scorer(self) -> SupportScorer:
+        """The support test this verifier applies.
+
+        Exposed so the write-time guard can choose passages by the same standard
+        the ship-time verifier judges them by. Two different scorers would mean
+        grounding a citation on a test the verifier never applies, and then
+        removing it for failing one the guard never ran.
+        """
+
+        return self._scorer
 
     def verify(self, citation: Citation) -> VerificationResult:
         # Rule 1: authority must originate from retrieval.
@@ -127,33 +206,70 @@ class CitationVerifier:
             )
 
         # Rule 4: the source must actually support the proposition. The scorer is
-        # pluggable — lexical by default, or a semantic NLI/embedding model on the
-        # Spark (see :mod:`legal_research.citations.support`).
-        best_passage = ""
-        best = 0.0
-        for passage in record.passages:
-            s = self._scorer.score(citation.proposition, passage)
-            if s > best:
-                best, best_passage = s, passage
+        # pluggable — semantic NLI by default in the live profile, with lexical
+        # fallback if semantic dependencies are unavailable.
+        #
+        # Scoring is clause-level: a proposition that joins two holdings from two
+        # different authorities is not entailed by either passage on its own, and
+        # scoring only the conjunction rejected every citation under NLI.
+        assessment = assess_support(
+            self._scorer,
+            citation.proposition,
+            record.passages,
+            threshold=self._threshold,
+            rule_relation=self._rule_relation,
+            # The passage the retriever returned when it grounded this
+            # proposition: the topicality evidence, already paid for at write
+            # time and recorded on the citation.
+            retrieved_passage=citation.supporting_passage,
+        )
 
-        if best < self._threshold:
+        if assessment.relation is SupportRelation.NONE:
             return VerificationResult(
                 citation_id=citation.id,
                 record_id=citation.record_id,
                 status=CiteStatus.REMOVED,
                 reason=(
-                    f"source does not support the proposition (support={best:.2f} "
-                    f"< {self._threshold:.2f}); possible misattributed holding"
+                    f"source does not support the proposition (support="
+                    f"{assessment.score:.2f} < {self._threshold:.2f}); possible "
+                    f"misattributed holding"
+                    + (f"; {assessment.note}" if assessment.note else "")
                 ),
-                supporting_passage=best_passage,
+                supporting_passage=assessment.passage,
+                relation=assessment.relation.value,
+            )
+
+        if assessment.relation is SupportRelation.RULE_SUPPORT:
+            # Kept, and marked for a human. The passage is the rule the claim
+            # applies; whether it *reaches* these facts is the argument the paper
+            # is making, and this verifier has no way to check an argument.
+            return VerificationResult(
+                citation_id=citation.id,
+                record_id=citation.record_id,
+                status=CiteStatus.VERIFIED,
+                reason=(
+                    # Not "topicality": that is the retriever's judgement and is
+                    # not a number here. This is the entailment probability,
+                    # reported because a reader should see how far short of
+                    # entailment the passage fell -- 0.04 and 0.50 are both rule
+                    # support and are not the same finding.
+                    f"states the rule the proposition applies (entailment="
+                    f"{assessment.score:.2f}, contradiction="
+                    f"{assessment.contradiction:.2f}); retrieved for this "
+                    f"proposition; the application to these facts is the "
+                    f"author's and is NOT verified"
+                ),
+                supporting_passage=assessment.passage,
+                relation=assessment.relation.value,
             )
 
         return VerificationResult(
             citation_id=citation.id,
             record_id=citation.record_id,
             status=CiteStatus.VERIFIED,
-            reason=f"resolves and supports the proposition (support={best:.2f})",
-            supporting_passage=best_passage,
+            reason=f"resolves and supports the proposition (support={assessment.score:.2f})",
+            supporting_passage=assessment.passage,
+            relation=assessment.relation.value,
         )
 
     def verify_all(self, citations: list[Citation]) -> list[VerificationResult]:
@@ -175,8 +291,8 @@ def build_verifier(
 ) -> CitationVerifier:
     """Construct a verifier whose support test honors ``LRG_SUPPORT_SCORER``.
 
-    Defaults to the deterministic lexical scorer; on the Spark, setting
-    ``LRG_SUPPORT_SCORER=nli`` (or ``embedding``) swaps in a semantic scorer.
+    Defaults to semantic NLI in the live profile; lexical remains available for
+    deterministic runs and as a fallback when semantic dependencies are missing.
     """
 
     s = settings or get_settings()

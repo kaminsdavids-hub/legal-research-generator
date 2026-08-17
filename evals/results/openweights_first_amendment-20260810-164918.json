@@ -1,0 +1,1224 @@
+{
+  "eval_set": "openweights_first_amendment",
+  "overall_mean": 2.55,
+  "scored_count": 32,
+  "total_count": 32,
+  "cluster_means": {
+    "A": 3.767,
+    "B": 1.967,
+    "C": 1.267,
+    "D": 1.32,
+    "E": 4.88,
+    "F": 2.15
+  },
+  "gate_failures": [
+    "A1",
+    "A6",
+    "A7",
+    "B3",
+    "B5",
+    "B6",
+    "B7",
+    "C1",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "D2",
+    "D4",
+    "D5",
+    "D6",
+    "E5",
+    "F2",
+    "F4",
+    "F5"
+  ],
+  "unscored_judge_failed": [],
+  "run_errors": {},
+  "questions": [
+    {
+      "id": "A1",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['209 F.3d 481 (not_found)', '564 U.S. 786 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        9,
+        7,
+        10,
+        9
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response thoroughly engages with the opposing argument, acknowledging its strength while ultimately dismissing it as outdated and misaligned with modern First Amendment jurisprudence. The cruxes are clearly identified and their resolution by authority is accurately assessed."
+    },
+    {
+      "id": "A2",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in a reasonable steelman of both sides, though the antithesis arguments are not fully fleshed out. The authority hierarchy is correctly identified and weighted appropriately. Counterarguments anticipate some procedural issues but miss deeper constitutional challenges. Crux identification is strong, isolating key contradictions. Synthesis is disciplined and follows logically from the weighing of authorities."
+    },
+    {
+      "id": "A3",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        9,
+        7,
+        10,
+        9
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 8.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis argument to its strongest form, considers potential counterarguments and authorities, identifies key contradictions between thesis and antithesis that resolve the issue, and synthesizes a well-reasoned conclusion. The cruxes identified are all outcome-bearing and resolvable by existing authority."
+    },
+    {
+      "id": "A5",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        8,
+        9,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.4,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in a thoughtful analysis of the key legal issues presented by the question. It identifies the central conflict between the applicability of the statute of limitations and qualified immunity in the context of sophisticated technology. The cruxes identified are relevant to the outcome, though one is not explicitly marked as outcome-bearing. The synthesis discipline could be stronger in tying the conclusions directly to the weighing of the doctrinal anchors."
+    },
+    {
+      "id": "A6",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['561 U.S. 1 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": false,
+            "detail": "90 Fed. Reg. 4544 is rescinded but no model-authored text says so"
+          }
+        }
+      },
+      "scores": [
+        3,
+        4,
+        2,
+        5,
+        4
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage with both sides of the argument, but does not fully steelman the antithesis. The authority hierarchy is acknowledged, but the citations provided are outdated and not directly relevant to the current debate. Counterarguments are mentioned briefly, but not thoroughly explored. The crux is identified as the degree of adaptation, but the synthesis does not fully integrate this into a coherent conclusion that logically follows from the weighing of authorities."
+    },
+    {
+      "id": "A7",
+      "cluster": "A",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['508 U.S. 520 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        3,
+        4,
+        2,
+        1,
+        3
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage in legal analysis but fails to adequately develop either the thesis or antithesis arguments. The synthesis section makes some effort at a balanced assessment but lacks depth and does not persuasively tie together relevant authorities or principles."
+    },
+    {
+      "id": "B1",
+      "cluster": "B",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "5 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        8,
+        9,
+        6,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The arguments on both sides are clearly presented and the synthesis effectively identifies the key issue of narrow tailoring. The analysis anticipates potential counterarguments under the APA and First Amendment. However, the cruxes identified do not fully resolve the central question of whether the licensing requirement constitutes a prior restraint."
+    },
+    {
+      "id": "B2",
+      "cluster": "B",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        3,
+        4,
+        2,
+        7,
+        5
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 4.2,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage in steelmanning and synthesis, but the antithesis arguments are not supported by controlling or persuasive authority. The crux is identified well, but the analysis does not fully account for the potential outcomes based on the current state of law."
+    },
+    {
+      "id": "B3",
+      "cluster": "B",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['471 U.S. 626 (not_found)', '418 U.S. 405 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "4 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        4,
+        8,
+        6,
+        9,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in steelmanning by presenting a strong thesis and antithesis. However, the authority hierarchy is not fully explored, as the rescinded rule limits the persuasiveness of both sides' arguments. The anticipation of counterarguments is moderate, addressing potential critiques but not exhaustively. Crux identification is strong, isolating the key question of operative legal precedent. Synthesis discipline is good, acknowledging the lack of current authority and likely outcomes, but could be more rigorous in tying together all relevant factors."
+    },
+    {
+      "id": "B5",
+      "cluster": "B",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['561 U.S. 1 (not_found)', '471 U.S. 626 (not_found)', '283 U.S. 697 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        5,
+        7,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in some steelmaning of the antithesis arguments. Authority hierarchy is somewhat acknowledged but not deeply explored. Counterarguments are anticipated at a high level for each regime. The crux is clearly identified and is outcome-bearing. Synthesis is attempted, though could be more disciplined in following logically from the weighing of vulnerabilities."
+    },
+    {
+      "id": "B6",
+      "cluster": "B",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['597 U.S. 697 (not_found)', '209 F.3d 481 (not_found)', '561 U.S. 1 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        3,
+        4,
+        5,
+        7,
+        6
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to steelman both sides and identify the crux of the issue. However, the authority hierarchy is not fully fleshed out, with controlling and persuasive authorities not clearly distinguished. Counterargument anticipation could be stronger in anticipating potential procedural or ripeness challenges. Synthesis discipline is reasonable but lacks a definitive conclusion given the split authority."
+    },
+    {
+      "id": "B7",
+      "cluster": "B",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['561 U.S. 1 (not_found)', '561 U.S. 1 (not_found)', '561 U.S. 1 (not_found)', '591 U.S. 430 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in a reasonable steelman of both sides' arguments, though some key authorities are unsupported. The hierarchy of authority is mostly sound, with controlling and persuasive sources cited appropriately. Counterarguments are anticipated to some degree but could be more thorough. Cruxes are well-identified and the synthesis follows logically from weighing the evidence. However, the conclusion that a facial challenge will likely prevail seems to overreach without stronger supporting rationale."
+    },
+    {
+      "id": "C1",
+      "cluster": "C",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['176 F.3d 1132 (not_found)', '176 F.3d 1132 (not_found)', '134 S. Ct. 2518 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        8,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The synthesis effectively identifies the key tension between First Amendment rights and national security interests. It acknowledges the strength of the antithesis's arguments regarding established precedent and intermediate scrutiny. The conclusion that a court would likely find the prohibition vulnerable to First Amendment challenges is well-reasoned, considering the specific nature of the restriction and the need for narrowly tailored approaches."
+    },
+    {
+      "id": "C2",
+      "cluster": "C",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "3 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels both arguments to their strongest form. It correctly identifies the hierarchy of authority and acknowledges the lack of direct Supreme Court guidance on this specific issue. The anticipation of counterarguments considers procedural challenges but does not deeply engage with standing or ripeness issues. The crux is well-identified as the interpretation of 'expression' in a technological context. Finally, the synthesis demonstrates discipline by following logically from the weighing of authorities and acknowledging honest uncertainty where precedent is split."
+    },
+    {
+      "id": "C4",
+      "cluster": "C",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['591 U.S. 430 (not_found)', '591 U.S. 430 (not_found)', '408 U.S. 753 (not_found)', '508 U.S. 520 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        4,
+        5,
+        6,
+        7,
+        5
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to steelman both sides of the argument and anticipate counterarguments. However, some key authorities are not cited, and the synthesis does not fully follow from the weighing of the arguments presented."
+    },
+    {
+      "id": "C5",
+      "cluster": "C",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['391 U.S. 367 (not_found)', '561 U.S. 1 (not_found)', '591 U.S. 430 (not_found)', '564 U.S. 786 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        8,
+        9,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in some steelmaning by considering the antithesis arguments. Authority hierarchy is mostly handled well, with a few unsupported claims. Anticipation of counterarguments is strong, noting potential procedural and constitutional challenges. The crux is identified as the key tension between US national security interests and foreign government actions. Synthesis is disciplined but could be tighter in drawing the final conclusions from the analysis."
+    },
+    {
+      "id": "C6",
+      "cluster": "C",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['391 U.S. 367 (not_found)', '391 U.S. 367 (not_found)', '391 U.S. 367 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        3,
+        4,
+        2,
+        5,
+        3
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage in steelmaning and identify key contradictions between the thesis and antithesis. However, the reasoning is often circular or unsupported by cited authority, undermining the strength of the analysis. The synthesis does not fully cohere the arguments into a clear legal conclusion."
+    },
+    {
+      "id": "C7",
+      "cluster": "C",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['564 U.S. 552 (not_found)', '561 U.S. 1 (not_found)', '591 U.S. 430 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        6,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The synthesis effectively identifies and engages with the key doctrinal anchors provided. It steels the proposition by focusing on the chilling effect of inbound bans on free expression and information access, while rebutting that outbound controls are justified by a clear national security interest. The decisive crux is well-articulated - the level of government intrusion and required scrutiny. However, some of the supporting arguments lack direct contra-authority citations to fully anticipate potential counterpoints."
+    },
+    {
+      "id": "D1",
+      "cluster": "D",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        5,
+        7,
+        9,
+        6
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 6.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response identifies key contradictions between the thesis and antithesis arguments. It correctly points out that neither side's authorities are currently valid law, making the crux a matter of unresolved legal interpretation rather than clear precedent. The synthesis acknowledges this uncertainty but leans towards finding for the university based on the current state of export control regulations. However, it does not fully engage with potential counterarguments around equal protection or de minimis exceptions which could further complicate the analysis."
+    },
+    {
+      "id": "D2",
+      "cluster": "D",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['564 U.S. 786 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "2 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        7,
+        8,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis argument to its strongest form, acknowledging the distinction between presence-based rights and immigration-consequence cases. It correctly identifies the core issue as not the right to receive a controlled substance but the extent of constitutional protections for non-citizens. The synthesis follows logically from weighing the authority, though there is some honest uncertainty due to the rescinded nature of the cited antithesis authority."
+    },
+    {
+      "id": "D4",
+      "cluster": "D",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['176 F.3d 1132 (not_found)', '491 U.S. 781 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        8,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the argument for scientific collaboration being protected expression and association. It anticipates counterarguments but lacks direct supporting authority in some cases. The cruxes are clearly identified as central to resolving the issue, favoring the thesis based on precedent. Synthesis is disciplined, following logically from the weighing of authorities."
+    },
+    {
+      "id": "D5",
+      "cluster": "D",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['561 U.S. 1 (not_found)', '391 U.S. 367 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        6,
+        8,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages with the provided doctrinal anchors and synthesizes them into a coherent legal argument. It anticipates counterarguments related to changed facts and doctrine, and identifies the crux of the dispute. The synthesis is disciplined in that it follows logically from the weighing of authorities."
+    },
+    {
+      "id": "D6",
+      "cluster": "D",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['494 U.S. 259 (not_found)', '494 U.S. 259 (not_found)', '394 U.S. 557 (not_found)', '491 U.S. 781 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "1 non-operative cite(s) acknowledged in model-authored text"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        8,
+        9,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis argument on qualified immunity to a competent level. It correctly identifies and prioritizes the key cruxes of the case, particularly the objective reasonableness standard vs qualified immunity. The synthesis is disciplined in following from this analysis, though it could be more forceful in tying together all the threads into a cohesive whole."
+    },
+    {
+      "id": "E1",
+      "cluster": "E",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "0 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        4,
+        6
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 5.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage with the key doctrinal anchors provided. It steels both sides of the argument and identifies some potential cruxes in the reasoning behind extending the case's deference beyond its original context. The synthesis acknowledges the risk of altering legal principles if the ruling is too broadly applied, but doesn't fully resolve that tension or anticipate all counterarguments to its likely outcome prediction."
+    },
+    {
+      "id": "E2",
+      "cluster": "E",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis argument to its strongest form, acknowledging the potential for strict scrutiny due to 'quasi-public forum' status. It anticipates counterarguments regarding fundamental rights and commercial speech, and identifies key cruxes that are genuinely dispositive of the outcome. The synthesis is disciplined in following logically from the weighing of authorities, though it does express some honest uncertainty where authority is split."
+    },
+    {
+      "id": "E4",
+      "cluster": "E",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "3 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        8,
+        9,
+        6,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 7.6,
+      "judge_parsed": true,
+      "judge_rationale": "The antithesis effectively challenges the government's strongest argument by focusing on the specific language of 'coordinated with' in the Humanitarian Law Project. This highlights a key distinction between active coordination and passive dissemination, which undermines the government's attempt to analogize weight publication to coordinated support. The synthesis then navigates this tension well, concluding that while the government's position may have some merit, it risks overreach and is legally untenable given the original intent of the Humanitarian Law Project ruling."
+    },
+    {
+      "id": "E5",
+      "cluster": "E",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['380 U.S. 51 (not_found)', '380 U.S. 51 (not_found)', '561 U.S. 1 (not_found)', '564 U.S. 786 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": false,
+            "detail": "90 Fed. Reg. 4544 is rescinded but no model-authored text says so"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        6
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in some steelmanning by considering the government's answer to the parade of horribles. However, the steelman is not fully fleshed out and lacks depth. The authority hierarchy is acknowledged but could be more thoroughly explored with controlling and persuasive authorities. Counterarguments are anticipated but again lack detail. Crux identification is strong in isolating the key disagreement over primary concerns guiding judicial review. Synthesis discipline is moderate as it acknowledges the decisive nature of the crux but does not fully explain how one side would prevail based on the current state of law."
+    },
+    {
+      "id": "E6",
+      "cluster": "E",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "3 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        4,
+        5,
+        3,
+        2,
+        4
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 3.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response attempts to engage with the doctrinal anchors provided but does not fully flesh out a compelling synthesis or anticipate counterarguments. The cruxes are not directly addressed and the reasoning is somewhat underdeveloped."
+    },
+    {
+      "id": "F1",
+      "cluster": "F",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": true,
+        "detail": {
+          "citation_integrity": {
+            "pass": true,
+            "detail": "6 cite(s), all retrieved and verified"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        9,
+        7,
+        10,
+        9
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 8.6,
+      "judge_parsed": true,
+      "judge_rationale": "The response thoroughly engages with the opposing arguments, anticipating potential counterpoints and addressing them head-on. The crux is clearly identified as the government's failure to demonstrate narrowly tailored measures under strict scrutiny. The synthesis follows logically from the weighing of authorities, leading to a well-reasoned likely outcome."
+    },
+    {
+      "id": "F2",
+      "cluster": "F",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['176 F.3d 1132 (not_found)', '391 U.S. 367 (not_found)', '570 U.S. 205 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        8,
+        7,
+        6,
+        9,
+        8
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The synthesis effectively navigates between the thesis and antithesis positions, identifying the key tension point of overbreadth concerns with structural controls. It anticipates potential counterarguments around abuse and lack of viewpoint neutrality. The crux is isolated as the decisive factor in likely outcomes. However, some of the supporting authority citations failed to verify, which slightly reduces the scores for steelmanning and authority hierarchy."
+    },
+    {
+      "id": "F4",
+      "cluster": "F",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['176 F.3d 1132 (not_found)', '491 U.S. 781 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        6,
+        7,
+        5,
+        8,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response engages in some steelmanning by considering the antithesis's arguments. Authority hierarchy is mostly appropriate, with one citation that has lost its legal force. Counterargument anticipation could be stronger, as it doesn't fully anticipate potential procedural or standing challenges. Crux identification is strong, isolating two key points of disagreement between thesis and antithesis. Synthesis discipline is good, walking through the analysis logically."
+    },
+    {
+      "id": "F5",
+      "cluster": "F",
+      "holdout": false,
+      "scored": true,
+      "error": "",
+      "gates": {
+        "pass": false,
+        "detail": {
+          "citation_integrity": {
+            "pass": false,
+            "detail": "retrieved but not verified: ['494 U.S. 259 (not_found)', '591 U.S. 430 (not_found)', '380 U.S. 51 (not_found)']"
+          },
+          "temporal_validity": {
+            "pass": true,
+            "detail": "no non-operative authority cited"
+          }
+        }
+      },
+      "scores": [
+        7,
+        6,
+        8,
+        9,
+        7
+      ],
+      "score_names": [
+        "steelmanning",
+        "authority_hierarchy",
+        "counterargument_anticipation",
+        "crux_identification",
+        "synthesis_discipline"
+      ],
+      "mean": 0.0,
+      "judge_parsed": true,
+      "judge_rationale": "The response effectively steels the antithesis's arguments to a competent level. It correctly identifies the core contradiction between the thesis and antithesis on the key issue of 'objectively reasonable' conduct under qualified immunity. The cruxes identified are all relevant and well-structured, with the first two being outcome-bearing. However, the synthesis does not fully account for the potential impact of the plaintiff's standing argument in light of the defendant's statute of limitations defense. Additionally, while the authority hierarchy is mostly accurate, some controlling precedents may exist that were not considered."
+    }
+  ]
+}

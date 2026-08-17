@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from ..citations.bluebook import FootnoteBuilder, table_of_authorities
+from ..citations.tokens import collapse_spacing
 from ..models import CiteStatus, FootnoteRef
 from .base import Agent, AgentContext, AgentResult
 
@@ -79,4 +80,11 @@ class CitationFormatterAgent(Agent):
 
 
 def _clean(text: str) -> str:
-    return re.sub(r"\s{2,}", " ", text).strip()
+    """Tidy spacing left by a removed token, keeping paragraph breaks.
+
+    See :func:`legal_research.citations.tokens.collapse_spacing`: this ran last
+    in the pipeline, so its blanket whitespace collapse flattened every section
+    no matter what the writer and the editor had produced.
+    """
+
+    return collapse_spacing(text)

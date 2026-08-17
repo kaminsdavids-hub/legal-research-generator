@@ -1,7 +1,56 @@
 // Typed client for the Legal Research Generator backend.
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+// Same origin by default: `/api/*` is handled by the Netlify function that
+// holds the backend key. Set NEXT_PUBLIC_API_URL only for local development
+// against a backend running on this machine, where there is no proxy.
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+// --------------------------------------------------------------------------
+// Credentials
+//
+// The backend key is NOT here and must never be. It lives in the Netlify
+// function's environment (netlify/functions/api-proxy.mts), which runs on a
+// server; this bundle is public and anything compiled into it is readable.
+//
+// What the browser may hold is the proxy password, which is a different secret:
+// it authorises calls to the proxy, not to the backend, so it can be rotated
+// without touching the host and it confers no direct access to it. If the site
+// is gated another way -- Netlify site-level password protection, or an access
+// rule in front of it -- leave this unset and the prompt never appears.
+// --------------------------------------------------------------------------
+
+const PASSWORD_STORAGE = "lrg.proxyPassword";
+
+export function getProxyPassword(): string {
+  if (typeof window === "undefined") return ""; // static export prerenders on the server
+  return window.localStorage.getItem(PASSWORD_STORAGE) ?? "";
+}
+
+export function setProxyPassword(password: string): void {
+  if (typeof window === "undefined") return;
+  const trimmed = password.trim();
+  if (trimmed) window.localStorage.setItem(PASSWORD_STORAGE, trimmed);
+  else window.localStorage.removeItem(PASSWORD_STORAGE);
+}
+
+export function clearProxyPassword(): void {
+  setProxyPassword("");
+}
+
+/** A 401. Distinct so the UI can ask for the password rather than showing a
+ *  generic failure -- "unauthorized" and "the server is down" call for
+ *  completely different things from the user. */
+export class UnauthorizedError extends Error {
+  constructor(message = "missing or invalid proxy password") {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const password = getProxyPassword();
+  return password ? { "X-Proxy-Password": password } : {};
+}
 
 export type IdeaStatus = "proposed" | "keep" | "cut";
 export type SectionStatus = "idea" | "drafted" | "cited" | "verified";
@@ -70,6 +119,11 @@ export interface Blackboard {
   title: string;
   thesis: string;
   brainstorm: BrainstormTurn[];
+  /** Non-empty when the Interviewer fell back to generic questions instead of
+   * model-generated ones, carrying the reason. The backend always sends it
+   * (blackboard.py), so the panel can say so rather than presenting canned
+   * questions as if a model wrote them. */
+  brainstorm_degraded?: string;
   ideas: Idea[];
   outline: OutlineSection[];
   authorities: Authority[];
@@ -83,21 +137,544 @@ export interface Blackboard {
 export interface AppConfig {
   llm_mode: string;
   retriever_mode: string;
+  embed_model: string;
+  support_scorer: string;
   pdf_renderer: string;
   citation_style: string;
+  manuscript_target_min_words: number;
+  manuscript_target_max_words: number;
   disclaimer: string;
+  /** Every configured panel slot. NOT the panel: each slot stays configured and
+   * warmed whether or not it is queried, so rendering this as the lineup names
+   * models that never answer. Cross-reference multi_chat_panel_members. */
+  multi_chat_models: Record<string, string>;
+  /** The slots actually queried, in order. */
+  multi_chat_panel_members: string[];
+  multi_chat_verifiers: Record<string, string>;
+  /** thesis / antithesis / synthesis / nli. The four must come from distinct
+   * model families — same-family debaters have correlated errors and produce
+   * agreement dressed as debate — so showing the lineup is how a reader checks
+   * the debate was real. */
+  dialectic_models: Record<string, string>;
+}
+
+export interface MultiChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface MultiChatModelAnswer {
+  model: string;
+  content: string;
+}
+
+export interface MultiChatVerifierResult {
+  model: string;
+  verdict: string;
+}
+
+export interface MultiChatCitationFinding {
+  citation: string;
+  kind: string;
+  status: "supported" | "unconfirmed" | "misattributed" | "not_in_corpus" | string;
+  detail: string;
+  record_id: string;
+  support: number;
+}
+
+export interface MultiChatGrounding {
+  available: boolean;
+  summary: string;
+  note: string;
+  authorities: string[];
+  findings: MultiChatCitationFinding[];
+  verified_count: number;
+  unverified_count: number;
+  unconfirmed_count: number;
+}
+
+export interface MultiChatResponse {
+  final_answer: string;
+  model_answers: MultiChatModelAnswer[];
+  verifiers: MultiChatVerifierResult[];
+  grounding?: MultiChatGrounding;
+}
+
+export type DialecticWeight = "controlling" | "persuasive" | "supporting" | "contra";
+export type DialecticSlotStatus = "pending" | "not_found" | "verified";
+
+export interface DialecticSlot {
+  proposition: string;
+  court_hint: string;
+  /** Widened to string deliberately: the backend types these as plain `str`
+   * with defaults, so a value outside the union is possible and must render
+   * rather than crash. */
+  weight: DialecticWeight | string;
+  status: DialecticSlotStatus | string;
+  cluster_id: string;
+  normalized_cite: string;
+  note: string;
+  /** Which path verified this slot: "courtlistener" (a live citation lookup) or
+   * "corpus" (a curated local record). Empty when unverified. Do not collapse
+   * these into one badge — a lookup consulted an authoritative index just now,
+   * a corpus record says a file in the repo carries the authority. On an
+   * export-control question the operative authority is regulatory, which
+   * CourtListener cannot adjudicate at all, so "corpus" is often the only
+   * warrant available and the reader has to know that is what they have. */
+  verified_by?: string;
+}
+
+export interface DialecticPosition {
+  side: string;
+  model: string;
+  /** Which model family argued this side. The lineup requires four distinct
+   * families — same-family debaters have correlated errors and produce
+   * agreement dressed as debate — so this is worth showing, not just storing. */
+  family: string;
+  propositions: DialecticSlot[];
+}
+
+export interface DialecticCrux {
+  thesis_prop: DialecticSlot;
+  antithesis_prop: DialecticSlot;
+  negates: boolean;
+  partition: string;
+  winner: "thesis" | "antithesis" | "none" | string;
+  /** True when both sides carry controlling or persuasive weight. A crux
+   * between two `supporting` propositions is still a contradiction, just not
+   * resolvable by authority — rank on this, do not filter on it. */
+  outcome_bearing: boolean;
+  /** Which NLI path produced the label. "heuristic" means the configured NLI
+   * model was absent or unparseable and the offline fallback answered — a
+   * weaker basis than "model", and the reason this travels with the label
+   * instead of being inferred. */
+  nli_source: "model" | "heuristic" | string;
+}
+
+export interface DialecticResponse {
+  question: string;
+  thesis: DialecticPosition;
+  antithesis: DialecticPosition;
+  synthesis: string;
+  cruxes: DialecticCrux[];
+  calls_spent: number;
+  /** Regeneration attempts across both positions and the synthesis. A turn that
+   * burned its budget is otherwise indistinguishable from a clean first pass. */
+  regenerated: number;
+  /** Why the crux table is empty, when it is. An empty table with no
+   * explanation is indistinguishable from a broken extractor. */
+  crux_note: string;
+  /** Server-rendered copy payloads; these preserve [UNSUPPORTED] markers, which
+   * a client re-serialising from the structured fields would drop. */
+  copy_exchange: string;
+  copy_thesis: string;
+  copy_antithesis: string;
+  copy_crux_table: string;
+}
+
+/** Whether a panel slot holds a real answer rather than a substitute.
+ *
+ * Mirrors MultiModelChat.answered on the backend, which exists because
+ * reporting a substitution as an answer makes a panel where everything failed
+ * look like a panel where everything worked. Keep the prefixes in step with
+ * multi_chat.py; a substitute this does not recognise is worse than no check,
+ * because it renders as a genuine model opinion. */
+export function isRealAnswer(content: string): boolean {
+  const t = content.trim().toLowerCase();
+  if (!t) return false;
+  return !(
+    t.startsWith("degraded panel answer (") ||
+    t.startsWith("(skipped:") ||
+    t.startsWith("(no response") ||
+    t.startsWith("(unavailable:")
+  );
+}
+
+/** The five Socratic prompts the Editor knows. Kept in step with the backend's
+ * own Literal (api/schemas.py) — anything else is normalised server-side to
+ * "strengthen_doctrine" (agents/editor.py), so an unlisted mode here would be
+ * silently rewritten rather than rejected. */
+export type SocraticMode =
+  | "strengthen_doctrine"
+  | "expand_analysis"
+  | "counter_rebuttal"
+  | "policy_implications"
+  | "comparative_framework";
+
+export interface SocraticTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface SocraticReviseResponse {
+  section_id: string;
+  paragraph_index: number;
+  assistant: string;
+  suggested_revision: string;
+  applied: boolean;
+  /** The four fields below are sent by the backend on every socratic revise
+   * (api/schemas.py) and were simply undeclared here. cycle_break_triggered
+   * says the exchange was stopped for going in circles rather than for being
+   * finished, which is the difference between a resolved point and an
+   * abandoned one -- the panel shows it, so it must be on the type. */
+  mode: SocraticMode;
+  cycle_break_triggered: boolean;
+  novelty_score: number;
+  rewrite_delta_score: number;
 }
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    // Spread init first: the caller may pass its own headers, and these must
+    // not be droppable by it.
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...(init?.headers ?? {}) },
   });
+  if (res.status === 401) throw new UnauthorizedError(await res.text());
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${detail}`);
   }
   return res.json() as Promise<T>;
+}
+
+/** Fetch a binary response and hand back an object URL.
+ *
+ *  An <a href> cannot carry a header, so a gated download cannot be a plain
+ *  link -- the browser would request it unauthenticated and get a 401. The
+ *  caller is responsible for revoking the URL when the download is done. */
+export async function fetchBlobUrl(path: string): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  if (res.status === 401) throw new UnauthorizedError();
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return URL.createObjectURL(await res.blob());
+}
+
+// --------------------------------------------------------------------------
+// Slow steps
+//
+// These drive a model and can run for minutes. Sent through the job routes so
+// every individual HTTP call is fast: the Netlify function in front of this has
+// a 26-second ceiling, and a five-minute request cannot be made to fit under it
+// however it is written.
+//
+// The synchronous routes still exist on the backend and are correct for a
+// loopback client with nothing in between. This client does not use them,
+// because it is the one that runs behind the proxy.
+// --------------------------------------------------------------------------
+
+export type JobState = "running" | "succeeded" | "failed";
+
+export interface JobStatus {
+  job_id: string;
+  session_id: string;
+  step: string;
+  state: JobState;
+  error: string;
+  /** Only run-all sets one; for every other step the result is the blackboard. */
+  result: Record<string, unknown> | null;
+  /** Progress in the order it happened. Also present on the poll, so falling
+   *  back to polling does not lose the progress you were following. */
+  events: JobEvent[];
+}
+
+/** One thing that happened during a step. `multi-chat` reports the panel:
+ *  `panel_started` with the model list, then `model_answered` per model as each
+ *  finishes — in completion order, which is what the person waiting sees — then
+ *  `synthesising`.
+ *
+ *  `dialectic` reports a sequence instead: `generating` and `position_generated`
+ *  per side, then `retrieved`, `verified`, `cruxes_extracted`, `synthesising`.
+ *  Its stages are heterogeneous — a model call, a network round-trip, an NLI
+ *  pass — so the stage name is the useful part, not the timing.
+ *
+ *  `run-all` reports `step_completed` per agent, with a 1-based `index` so a
+ *  display can show "step 4 of n", and `degraded` set when that stage fell back
+ *  rather than succeeding. A run where most agents fell back is exactly the run
+ *  worth watching, so do not filter those out. */
+export interface JobEvent {
+  event: string;
+  /** multi-chat */
+  model?: string;
+  name?: string;
+  seconds?: number;
+  characters?: number;
+  answered?: boolean;
+  models?: string[];
+  answers?: number;
+  /** run-all */
+  index?: number;
+  agent?: string;
+  degraded?: boolean;
+  /** dialectic */
+  side?: "thesis" | "antithesis";
+  propositions?: number;
+  retries?: number;
+  filled?: number;
+  calls_spent?: number;
+  count?: number;
+  note?: string;
+}
+
+export type JobStep =
+  | "run-all"
+  | "multi-chat"
+  | "dialectic"
+  | "socratic"
+  | "brainstorm"
+  | "ideate"
+  | "outline"
+  | "research"
+  | "draft"
+  | "voice"
+  | "verify"
+  | "format"
+  | "novelty"
+  | "mechanism";
+
+export interface RunAllSummary {
+  steps: { agent: string; runtime: string; summary: string }[];
+  shippable: boolean;
+}
+
+/** Run the whole pipeline as one job.
+ *
+ *  Separate from `runStep` because it is the only step that takes arguments and
+ *  the only one whose result is not simply the blackboard: the per-agent log and
+ *  the shippable verdict exist nowhere else, so they come back on the job. */
+export async function runAll(
+  sessionId: string,
+  idea: string,
+  title: string,
+  onState?: (state: JobState) => void,
+  onProgress?: (event: JobEvent) => void
+): Promise<{ blackboard: Blackboard; summary: RunAllSummary }> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ step: "run-all", idea, title }),
+  });
+  onState?.(started.state);
+
+  const status = await awaitJob(started.job_id, onState, 2000, onProgress);
+  if (status.state === "failed") throw new Error(`run-all failed: ${status.error}`);
+
+  return {
+    blackboard: await jsonFetch<Blackboard>(`/api/sessions/${sessionId}`),
+    summary: (status.result as unknown as RunAllSummary) ?? { steps: [], shippable: false },
+  };
+}
+
+/** Ask a question as a job, and get the answer back whole.
+ *
+ *  Unlike the pipeline steps, these never touch the blackboard — the entire
+ *  response is the job's result, so there is nothing to fetch afterwards. They
+ *  are also not exclusive: several can be in flight at once, including while a
+ *  draft is running. */
+export async function askAsJob<T>(
+  sessionId: string,
+  step: "multi-chat" | "dialectic",
+  message: string,
+  history: SocraticTurn[] = [],
+  onState?: (state: JobState) => void,
+  onProgress?: (event: JobEvent) => void
+): Promise<T> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ step, message, history }),
+  });
+  onState?.(started.state);
+
+  const status = await awaitJob(started.job_id, onState, 2000, onProgress);
+  if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
+  return status.result as unknown as T;
+}
+
+/** One Socratic exchange about a paragraph, as a job.
+ *
+ *  `applyRevision` is not just an option: it decides whether this call writes.
+ *  A question can run beside a draft; an applied revision cannot, and the
+ *  backend will answer 409 if one is already in flight. */
+export async function socraticAsJob(
+  sessionId: string,
+  sectionId: string,
+  paragraphIndex: number,
+  message: string,
+  history: SocraticTurn[] = [],
+  applyRevision = false,
+  onState?: (state: JobState) => void
+): Promise<SocraticReviseResponse> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({
+      step: "socratic",
+      section_id: sectionId,
+      paragraph_index: paragraphIndex,
+      message,
+      history,
+      apply_revision: applyRevision,
+    }),
+  });
+  onState?.(started.state);
+
+  const status = await awaitJob(started.job_id, onState);
+  if (status.state === "failed") throw new Error(`socratic failed: ${status.error}`);
+  return status.result as unknown as SocraticReviseResponse;
+}
+
+/** Wait for a job by holding one connection open instead of asking repeatedly.
+ *
+ *  `fetch`, not `EventSource`: EventSource cannot set request headers, so it
+ *  could not send the proxy password. The trade is that reconnection is not
+ *  automatic — `awaitJob` falls back to polling if the stream drops, which is
+ *  also what makes it safe to use behind a proxy that may cut it short.
+ *
+ *  Note what this does not stream. The engines are batch internally, so these
+ *  are events about a job, not tokens of an answer; the payload arrives whole
+ *  when the step finishes. */
+async function streamJob(
+  jobId: string,
+  onState?: (state: JobState) => void,
+  onProgress?: (event: JobEvent) => void
+): Promise<JobStatus> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/events`, { headers: authHeaders() });
+  if (res.status === 401) throw new UnauthorizedError();
+  if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) throw new Error("stream ended without a terminal event");
+    buffer += decoder.decode(value, { stream: true });
+
+    let split: number;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      // A comment frame is the heartbeat; a client ignores it.
+      if (frame.startsWith(":")) continue;
+      const event = /^event: (.*)$/m.exec(frame)?.[1];
+      const data = /^data: (.*)$/m.exec(frame)?.[1];
+      if (!event || !data) continue;
+      if (event === "progress") {
+        onProgress?.(JSON.parse(data) as JobEvent);
+        continue;
+      }
+      const status = JSON.parse(data) as JobStatus;
+      onState?.(status.state);
+      if (event === "done") {
+        void reader.cancel();
+        return status;
+      }
+    }
+  }
+}
+
+/** Consecutive failed polls tolerated before giving up on a job.
+ *
+ *  At the 2s default interval this is ten seconds of sustained failure, which
+ *  clears the transient drops seen on a tailnet hop without hiding a backend
+ *  that has actually stopped answering. The count resets on any success, so a
+ *  long job survives repeated isolated blips -- it is a run of failures that
+ *  means something, not a total. */
+const MAX_CONSECUTIVE_POLL_FAILURES = 5;
+
+/** Wait for a job: stream if we can, poll if the stream is unavailable.
+ *
+ *  The fallback is not defensive padding. A proxy with a function timeout will
+ *  cut a long stream mid-flight, and polling is the path that survives that —
+ *  so the fast path is tried first and the durable one is always there. */
+export async function awaitJob(
+  jobId: string,
+  onState?: (state: JobState) => void,
+  intervalMs = 2000,
+  onProgress?: (event: JobEvent) => void
+): Promise<JobStatus> {
+  try {
+    return await streamJob(jobId, onState, onProgress);
+  } catch (err) {
+    if (err instanceof UnauthorizedError) throw err;
+    // Polling still delivers progress, because the poll carries `events` too —
+    // a proxy cutting the stream should cost you the immediacy, not the
+    // information. Replay only what is new, or every poll would repeat the lot.
+    let seen = 0;
+    let consecutiveFailures = 0;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // One poll, surviving a transient failure.
+    //
+    // This loop is the fallback for paths where the stream does not hold, so it
+    // is exactly the wrong place to be brittle -- and it was: a bare jsonFetch
+    // meant one rejected request abandoned the whole wait. A five-minute panel
+    // is ~150 polls, so on a flaky hop (a tailscale serve proxy, measured) a
+    // single blip was near-certain, and the backend job would run to completion
+    // with nobody listening. Work done and thrown away is the worst outcome
+    // available here, worse than waiting longer.
+    //
+    // Bounded, though: a backend that is genuinely gone must surface as an
+    // error rather than a spinner that never resolves. Unauthorized is never
+    // retried -- a key does not become correct by asking again.
+    const poll = async (): Promise<JobStatus> => {
+      for (;;) {
+        try {
+          const next = await jsonFetch<JobStatus>(`/api/jobs/${jobId}`);
+          consecutiveFailures = 0;
+          return next;
+        } catch (e) {
+          if (e instanceof UnauthorizedError) throw e;
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+            throw new Error(
+              `job ${jobId}: ${consecutiveFailures} consecutive polls failed ` +
+                `(last: ${e}). The job may still be running on the backend; ` +
+                `GET /api/jobs/${jobId} will still return its result.`
+            );
+          }
+          await sleep(intervalMs);
+        }
+      }
+    };
+
+    let status = await poll();
+    for (;;) {
+      onState?.(status.state);
+      status.events.slice(seen).forEach((e) => onProgress?.(e));
+      seen = status.events.length;
+      if (status.state !== "running") return status;
+      await sleep(intervalMs);
+      status = await poll();
+    }
+  }
+}
+
+/** Submit a step and resolve when it finishes, or reject with what went wrong.
+ *
+ *  `onState` fires on every poll so a caller can show progress; a step that
+ *  takes four minutes with no feedback is indistinguishable from a hang.
+ *
+ *  The 2s interval is a deliberate floor: these steps take tens of seconds at
+ *  best, so polling faster only multiplies function invocations, which on
+ *  Netlify are metered. */
+export async function runStep(
+  sessionId: string,
+  step: JobStep,
+  onState?: (state: JobState) => void,
+  intervalMs = 2000,
+  onProgress?: (event: JobEvent) => void
+): Promise<Blackboard> {
+  const started = await jsonFetch<JobStatus>(`/api/sessions/${sessionId}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ step }),
+  });
+  onState?.(started.state);
+
+  const status = await awaitJob(started.job_id, onState, intervalMs, onProgress);
+  if (status.state === "failed") throw new Error(`${step} failed: ${status.error}`);
+  // Fetched once, on success. The poll deliberately does not carry the
+  // blackboard: it is large, and a poller would re-download it every 2s.
+  return jsonFetch<Blackboard>(`/api/sessions/${sessionId}`);
 }
 
 export const api = {
@@ -142,7 +719,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ section_id: sectionId, instruction }),
     }),
-  runAll: (id: string, idea: string, title: string) =>
+  socraticRevise: (
+    id: string,
+    sectionId: string,
+    paragraphIndex: number,
+    message: string,
+    history: SocraticTurn[] = [],
+    applyRevision = false
+  ) =>
+    jsonFetch<SocraticReviseResponse>(`/api/sessions/${id}/revise/socratic`, {
+      method: "POST",
+      body: JSON.stringify({
+        section_id: sectionId,
+        paragraph_index: paragraphIndex,
+        message,
+        history,
+        apply_revision: applyRevision,
+      }),
+    }),
+  /** The synchronous route: one request held open for the entire pipeline.
+   *  Correct only for a loopback client with nothing in between. The app uses
+   *  the exported `runAll()` above, which submits a job and polls; this stays
+   *  for scripts and local tools that genuinely want to block.
+   *
+   *  Named apart from `runAll` deliberately. They previously shared a name in
+   *  two scopes, and the page reached the wrong one — which compiled fine until
+   *  a real build resolved the import. */
+  runAllSync: (id: string, idea: string, title: string) =>
     jsonFetch<{ session_id: string; steps: { agent: string; runtime: string; summary: string }[]; shippable: boolean }>(
       `/api/sessions/${id}/run-all`,
       { method: "POST", body: JSON.stringify({ idea, title }) }
@@ -151,5 +754,8 @@ export const api = {
     jsonFetch<{ markdown: string }>(`/api/sessions/${id}/report`),
   preview: (id: string) =>
     jsonFetch<{ html: string }>(`/api/sessions/${id}/preview`),
+  /** Kept for callers that only need the address (e.g. to display it). It is
+   *  NOT usable as a download link once a key is set -- use `downloadPdf`. */
   pdfUrl: (id: string) => `${API_BASE}/api/sessions/${id}/pdf`,
+  downloadPdf: (id: string) => fetchBlobUrl(`/api/sessions/${id}/pdf`),
 };

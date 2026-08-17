@@ -68,6 +68,18 @@ def _last_user(messages: list[ChatMessage]) -> str:
     return ""
 
 
+def _point_from(user_message: str) -> str:
+    """The ``Point:`` line the Writer puts in its drafting prompt, if present."""
+    for line in user_message.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("point:"):
+            point = stripped.split(":", 1)[1].strip()
+            if point and not point.endswith((".", "?", "!")):
+                point += "."
+            return point
+    return ""
+
+
 def _keywords(text: str, limit: int = 6) -> list[str]:
     words = re.findall(r"[A-Za-z][A-Za-z-]{3,}", text.lower())
     stop = {
@@ -108,6 +120,11 @@ class MockLLM(LLMClient):
         text = self.chat(messages, config)
         yield from re.findall(r"\S+\s*", text)
 
+    def warm_up(self, prompt: str = ".") -> None:
+        """Mock models have no external process to warm."""
+
+        return
+
     # ---- task-specific responders -------------------------------------------------
 
     def _task_generic(self, messages: list[ChatMessage], rng: random.Random) -> str:
@@ -146,14 +163,29 @@ class MockLLM(LLMClient):
     def _task_ideate(self, messages: list[ChatMessage], rng: random.Random) -> str:
         kws = _keywords(_last_user(messages)) or ["the doctrine"]
         base = kws[0]
+        # "TOPIC || CLAIM": the claim is what a source can support, and the
+        # pipeline verifies against it. A mock that emitted topics only let the
+        # integration tests pass while verifying titles against themselves.
         angles = [
-            f"Reframe {base} as a monitoring-cost problem rather than a fairness problem.",
-            f"Argue that the circuit split over {base} is really a disagreement about remedies, not rights.",
-            f"Import a finance concept — priority of claims — to explain why {base} produces perverse incentives.",
-            f"Show that the leading case on {base} rests on a factual assumption that no longer holds.",
+            (
+                f"Reframe {base} as a monitoring-cost problem rather than a fairness problem",
+                f"The doctrine governing {base} allocates monitoring costs rather than vindicating fairness.",
+            ),
+            (
+                f"Argue the circuit split over {base} is about remedies, not rights",
+                f"The circuit split over {base} concerns the available remedy rather than the underlying right.",
+            ),
+            (
+                f"Import priority of claims to explain incentives under {base}",
+                f"Priority of claims explains why {base} produces incentives its drafters did not intend.",
+            ),
+            (
+                f"Show the leading case on {base} rests on a stale factual assumption",
+                f"The leading case on {base} rests on a factual assumption that no longer holds.",
+            ),
         ]
         rng.shuffle(angles)
-        return "\n".join(f"- {a}" for a in angles)
+        return "\n".join(f"- {topic} || {claim}" for topic, claim in angles)
 
     def _task_write(self, messages: list[ChatMessage], rng: random.Random) -> str:
         # Compose prose that always contains at least one very short and one very long
@@ -165,6 +197,15 @@ class MockLLM(LLMClient):
         extras = [b for b in _BODIES if b not in (short, long_)]
         rng.shuffle(extras)
         body = [short, long_, *extras[: rng.randint(1, 2)]]
+
+        # State the point the section is being drafted from. Real drafting does
+        # this -- a paragraph arguing a proposition asserts it -- and without it
+        # the mock produced prose that mentioned nothing citable, so a citation
+        # could only ever be grounded in a topic rather than in a claim
+        # (REMEDIATION §23).
+        point = _point_from(_last_user(messages))
+        if point:
+            body.append(point)
         rng.shuffle(body)
         return " ".join([opener, *body, closer])
 
