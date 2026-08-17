@@ -178,6 +178,31 @@ _MIRROR_FEEDBACK = (
     "doctrine or a different framing of the question."
 )
 
+
+#: Told to the synthesis when the citation channel rejected its last answer.
+#:
+#: The synthesis loop's other rejection branch — the one for an unacknowledged
+#: rescinded authority — already fed its reason back via _STATUS_FEEDBACK. This
+#: one re-rolled on temperature alone, so the model saw an identical prompt and
+#: made an identical mistake three times in a row. Observed on every run:
+#: "citation string(s) rejected: ['Bernstein v. U.S. Dep']; after 3 attempts",
+#: which spent the whole budget and returned no synthesis at all.
+#:
+#: The offending strings are quoted back because the rule is easy to satisfy and
+#: hard to guess at: "do not cite" reads as a style note until you are shown
+#: that naming the parties is what tripped it. The substitutions are spelled out
+#: for the same reason — a model told only what it may not write tends to write
+#: nothing, and an empty synthesis is not an improvement on a rejected one.
+_CITATION_FEEDBACK = (
+    "\n\nYour previous answer was REJECTED for naming authority. These strings "
+    "tripped the citation channel:\n{hits}\n"
+    "Refer to authority by what it decided, never by name or reporter: write "
+    "\"the Ninth Circuit's encryption source-code decision\", \"the published-"
+    "information exception\", or \"the controlling deemed-export rule\" instead "
+    "of party names, 'X v. Y', or volume-reporter-page strings. Keep every "
+    "other part of your answer — only the naming has to change."
+)
+
 _SYNTHESIS_PROMPT = (
     "You are the synthesis in a legal dialectic.\n"
     "The user question, thesis, and antithesis are provided below.\n"
@@ -533,6 +558,12 @@ class DialecticChat:
                 self.channel.scan(raw, role="assistant")
             except CitationDetected as exc:
                 last_error = f"attempt {attempt}: citation string(s) rejected: {exc.hits}"
+                # Say what tripped, as the status branch below does. Without
+                # this the retry differed only by temperature and seed, so the
+                # same phrasing came back and the budget bought nothing.
+                feedback = _CITATION_FEEDBACK.format(
+                    hits="\n".join(f"  - {hit}" for hit in exc.hits)
+                )
                 continue
 
             # The synthesis is the only role that sees an authority's status, so
