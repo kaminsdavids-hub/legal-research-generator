@@ -20,6 +20,16 @@ def client(monkeypatch) -> TestClient:
     # deterministic mock backend so they run without GPU or network.
     monkeypatch.setenv("LRG_LLM_MODE", "mock")
     monkeypatch.setenv("LRG_RETRIEVER_MODE", "mock")
+    # And no shared key, because these tests send none. This is not tidiness:
+    # the app reads LRG_API_KEY at import and installs ApiKeyMiddleware with it,
+    # so whether the suite passes depended on whether whoever ran it happened to
+    # have a key in their .env. Setting one for a deployment turned ten tests in
+    # this file red without a line of source changing -- every request 401s, and
+    # the failures read as `KeyError: 'session_id'` because the error body has
+    # no session in it. A suite that answers to ambient local config is not
+    # reporting on the code. `tests/test_auth.py` covers the gate itself, with
+    # the key set deliberately rather than inherited.
+    monkeypatch.setenv("LRG_API_KEY", "")
     from legal_research.api.app import app
 
     return TestClient(app)

@@ -147,10 +147,47 @@ class JobStore:
     milliseconds, which would defeat the entire point of this module.
     """
 
+    #: Finished jobs kept before the oldest are dropped.
+    #:
+    #: They were kept forever. A job holds its whole result -- a jury exchange
+    #: is several KB of prose -- plus every progress event, and this process is
+    #: a long-running service, so the store only ever grew. Nothing removed
+    #: anything: no TTL, no cap, no delete.
+    #:
+    #: 200 is chosen to be far past any plausible polling window rather than
+    #: tight: a client fetches a result once, moments after the job ends, and
+    #: nothing reads a job again after that. Running jobs are never dropped at
+    #: any count, so a slow step cannot be evicted out from under the client
+    #: waiting on it.
+    MAX_FINISHED_JOBS = 200
+
     def __init__(self) -> None:
         self._jobs: dict[str, Job] = {}
         self._by_session: dict[str, str] = {}
         self._lock = threading.Lock()
+
+    def _prune_locked(self) -> None:
+        """Drop the oldest finished jobs. Caller must hold the lock.
+
+        Insertion order is submission order, so the dict is already oldest
+        first and no timestamp is needed on ``Job`` -- one that existed only to
+        support eviction would end up on the wire the next time somebody
+        serialised the job.
+
+        ``_by_session`` is cleaned alongside. It points at the session's most
+        recent *mutating* job, and ``submit`` reads ``self._jobs[active]`` to
+        decide whether the session is busy; leaving a pointer to a dropped job
+        would raise KeyError there and refuse every later submission on that
+        session.
+        """
+        finished = [job_id for job_id, job in self._jobs.items() if job.done]
+        excess = len(finished) - self.MAX_FINISHED_JOBS
+        if excess <= 0:
+            return
+        for job_id in finished[:excess]:
+            job = self._jobs.pop(job_id)
+            if self._by_session.get(job.session_id) == job_id:
+                del self._by_session[job.session_id]
 
     def submit(
         self,
@@ -184,8 +221,14 @@ class JobStore:
         with self._lock:
             if mutates:
                 active = self._by_session.get(session_id)
-                if active is not None and not self._jobs[active].done:
+                # `.get` rather than `[...]`: _prune_locked keeps the two in
+                # step, but a stale pointer must degrade to "not busy" rather
+                # than raising and locking the session out permanently.
+                running = self._jobs.get(active) if active is not None else None
+                if running is not None and not running.done:
                     raise SessionBusy(active)
+
+            self._prune_locked()
 
             job = Job(id=uuid.uuid4().hex[:12], session_id=session_id, step=step)
             self._jobs[job.id] = job

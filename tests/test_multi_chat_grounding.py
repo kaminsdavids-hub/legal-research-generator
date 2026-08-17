@@ -215,6 +215,11 @@ def test_grounding_can_be_disabled(monkeypatch, settings) -> None:
 def test_api_multi_chat_exposes_grounding(monkeypatch) -> None:
     monkeypatch.setenv("LRG_LLM_MODE", "mock")
     monkeypatch.setenv("LRG_RETRIEVER_MODE", "mock")
+    # This test sends no key, so it must not inherit one from the developer's
+    # .env -- see the same pin in tests/test_api.py. It failed in isolation and
+    # passed in the full suite purely on import order, because the app binds
+    # ApiKeyMiddleware once at first import.
+    monkeypatch.setenv("LRG_API_KEY", "")
     reset_settings()
 
     from fastapi.testclient import TestClient

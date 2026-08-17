@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import tempfile
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
@@ -73,8 +74,33 @@ app.add_middleware(
 
 pipeline = LegalResearchPipeline(_settings)
 multi_chat = MultiModelChat(_settings)
-_sessions: dict[str, Blackboard] = {}
+#: Sessions held before the least recently used is dropped.
+#:
+#: This dict grew without bound: nothing evicted, no TTL, no cap, and each
+#: entry holds a whole blackboard -- manuscript, citations, footnotes, table of
+#: authorities. In a service that stays up for days that is a slow leak on a
+#: box whose memory is already committed to resident models.
+#:
+#: Eviction is least-recently-*used*, not oldest-created, and that distinction
+#: is the whole safety argument: a paper someone is still working on is touched
+#: on every request and can never be the one dropped, however long ago it was
+#: started. Only sessions nobody has opened in a while are at risk.
+#:
+#: Set high enough that reaching it means the process has been up a long time.
+#: Sessions are already lost on restart -- jobs.py says so and calls the two
+#: consistent -- so bounding them narrows a window that was never durable.
+MAX_SESSIONS = 100
+
+_sessions: OrderedDict[str, Blackboard] = OrderedDict()
 _jobs = JobStore()
+
+
+def _remember(bb: Blackboard) -> None:
+    """Store or refresh a session, dropping the least recently used if full."""
+    _sessions[bb.session_id] = bb
+    _sessions.move_to_end(bb.session_id)
+    while len(_sessions) > MAX_SESSIONS:
+        _sessions.popitem(last=False)
 
 #: Built lazily: the family guard raises if two debate roles share a base model
 #: family, and that must surface as a request error rather than a dead import.
@@ -102,6 +128,11 @@ def _get(session_id: str) -> Blackboard:
     bb = _sessions.get(session_id)
     if bb is None:
         raise HTTPException(status_code=404, detail=f"unknown session {session_id}")
+    # Every read counts as use. This is what makes the LRU bound safe: a session
+    # under active work is refreshed by each request against it, so it stays at
+    # the hot end and the only entries eligible for eviction are ones nobody has
+    # touched in a hundred sessions' worth of traffic.
+    _sessions.move_to_end(session_id)
     return bb
 
 
@@ -223,46 +254,28 @@ def _dialectic_response(turn: object) -> DialecticResponse:
 
     from modules.dialectic.copy import copy_crux_table, copy_exchange, copy_position
 
-    def slot(s: object) -> dict[str, object]:
-        return {
-            "proposition": s.proposition,  # type: ignore[attr-defined]
-            "court_hint": s.court_hint,  # type: ignore[attr-defined]
-            "weight": s.weight,  # type: ignore[attr-defined]
-            "status": s.status,  # type: ignore[attr-defined]
-            "cluster_id": s.cluster_id,  # type: ignore[attr-defined]
-            "normalized_cite": s.normalized_cite,  # type: ignore[attr-defined]
-            "note": s.note,  # type: ignore[attr-defined]
-            # Hand-mapped field by field, so a field added to CitationSlot and to
-            # the response schema still silently defaults to "" until it is
-            # listed here — which is exactly how verified_by shipped invisible.
-            "verified_by": s.verified_by,  # type: ignore[attr-defined]
-        }
-
-    def position(p: object) -> dict[str, object]:
-        return {
-            "side": p.side,  # type: ignore[attr-defined]
-            "model": p.model,  # type: ignore[attr-defined]
-            "family": p.family,  # type: ignore[attr-defined]
-            "propositions": [slot(s) for s in p.propositions],  # type: ignore[attr-defined]
-        }
-
+    # `model_dump()` rather than a hand-built dict, for the reason
+    # `_multi_chat_work` already gives: the response model is the contract, and
+    # re-describing it here lets the two drift apart silently. They did. This
+    # function listed a slot's fields one by one, so `verified_by` -- set by the
+    # engine, declared on the schema, rendered by the panel -- arrived empty on
+    # every slot and the corpus badge was invisible. Nothing failed: the types
+    # checked, the suite passed, the request returned 200. It was caught by
+    # looking at a screenshot.
+    #
+    # The schema still decides what reaches the wire, so this does not leak
+    # internals by widening: Position carries a `raw` field holding the model's
+    # unparsed output, DialecticPosition does not declare it, and pydantic's
+    # default `extra="ignore"` drops it. Crux and CitationSlot match the schema
+    # exactly. Adding a field to the engine now either appears on the wire
+    # because the schema declares it, or does not because it does not --
+    # never because somebody forgot a line here.
     return DialecticResponse(
         question=turn.question,  # type: ignore[attr-defined]
-        thesis=position(turn.thesis),  # type: ignore[arg-type, attr-defined]
-        antithesis=position(turn.antithesis),  # type: ignore[arg-type, attr-defined]
+        thesis=turn.thesis.model_dump(),  # type: ignore[arg-type, attr-defined]
+        antithesis=turn.antithesis.model_dump(),  # type: ignore[arg-type, attr-defined]
         synthesis=turn.synthesis,  # type: ignore[attr-defined]
-        cruxes=[
-            {
-                "thesis_prop": slot(c.thesis_prop),
-                "antithesis_prop": slot(c.antithesis_prop),
-                "negates": c.negates,
-                "partition": c.partition,
-                "winner": c.winner,
-                "outcome_bearing": c.outcome_bearing,
-                "nli_source": c.nli_source,
-            }
-            for c in turn.cruxes  # type: ignore[attr-defined]
-        ],  # type: ignore[arg-type]
+        cruxes=[c.model_dump() for c in turn.cruxes],  # type: ignore[arg-type, attr-defined]
         calls_spent=turn.calls_spent,
         regenerated=turn.regenerated,
         crux_note=turn.crux_note,
@@ -341,7 +354,7 @@ def config() -> ConfigResponse:
 @app.post("/api/sessions", response_model=Blackboard)
 def create_session(req: CreateSessionRequest) -> Blackboard:
     bb = pipeline.new_session(req.title)
-    _sessions[bb.session_id] = bb
+    _remember(bb)
     return bb
 
 
@@ -499,7 +512,7 @@ def run_all(session_id: str, req: RunAllRequest) -> RunAllResponse:
         ) from exc
     # Replace the stored blackboard with the fully-run one, preserving the id.
     result.blackboard.session_id = session_id
-    _sessions[session_id] = result.blackboard
+    _remember(result.blackboard)
     return RunAllResponse(
         session_id=session_id,
         steps=[StepInfo(agent=s.agent, runtime=s.runtime, summary=s.summary) for s in result.steps],
@@ -699,7 +712,7 @@ def _run_all_work(
         on_event=job.emit if job is not None else None,
     )
     result.blackboard.session_id = session_id
-    _sessions[session_id] = result.blackboard
+    _remember(result.blackboard)
     return {
         "steps": [
             {"agent": s.agent, "runtime": s.runtime, "summary": s.summary} for s in result.steps
