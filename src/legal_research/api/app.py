@@ -232,6 +232,10 @@ def _dialectic_response(turn: object) -> DialecticResponse:
             "cluster_id": s.cluster_id,  # type: ignore[attr-defined]
             "normalized_cite": s.normalized_cite,  # type: ignore[attr-defined]
             "note": s.note,  # type: ignore[attr-defined]
+            # Hand-mapped field by field, so a field added to CitationSlot and to
+            # the response schema still silently defaults to "" until it is
+            # listed here — which is exactly how verified_by shipped invisible.
+            "verified_by": s.verified_by,  # type: ignore[attr-defined]
         }
 
     def position(p: object) -> dict[str, object]:

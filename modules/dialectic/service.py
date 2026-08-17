@@ -19,6 +19,16 @@ logger = logging.getLogger(__name__)
 #: The four roles this module serves, in the order a reader expects them.
 ROLES = ("thesis", "antithesis", "synthesis", "nli")
 
+#: Passages to fetch per candidate wanted, so the record-level cut in
+#: :meth:`_CorpusCiteRetriever.propose` has something to choose from.
+#:
+#: Sized from the worst case on the shipped corpus: Bernstein took 8 of the top
+#: 10 passages for an export-control query. At 8, asking for 5 records searches
+#: 40 passages, which still leaves room for other authorities when one document
+#: monopolises the head of the list. It is one FAISS search either way — the
+#: cost is in the model calls downstream, not here.
+_PASSAGE_FANOUT = 8
+
 
 class _ClientAdapter:
     """Adapt the project's ``LLMClient`` to the dialectic ``ChatClient`` protocol.
@@ -140,22 +150,53 @@ class _CorpusCiteRetriever:
         return False
 
     def propose(self, court_hint: str, proposition: str) -> list[str]:
+        """Candidate citations for this slot, best first, one per record.
+
+        The retriever scores *passages*, so a long opinion occupies as many of
+        the top hits as it has relevant paragraphs. Cutting at ``k`` passages
+        therefore does not yield ``k`` authorities — it yields whatever survived
+        one document's fan-out. Measured on the shipped corpus, the query behind
+        "the EAR published-information exception applies to source code posted
+        publicly" returned Bernstein in 8 of the top 10 passages, with
+        15 C.F.R. 734.13(b) and 734.7 ranked third and fourth on score and
+        crowded out of the list the engine actually reads.
+
+        That mattered because the engine takes ``candidates[0]``: every
+        proposition on an export-control question was assigned a First
+        Amendment case, and the regulation that governs the question was
+        retrieved and discarded. So the top-k is taken over records, not
+        passages — a record's best passage represents it, ties keep search
+        order, and one document can no longer spend the whole budget.
+        """
         query = f"{court_hint} {proposition}".strip()
         if not query:
             return []
         try:
-            hits = self._retriever.search(query, k=self._k)
+            # Over-fetch at the passage level so the record-level cut has
+            # something to choose from. The fan-out covers the worst case
+            # measured above; a bigger window costs one FAISS search either way.
+            hits = self._retriever.search(query, k=self._k * _PASSAGE_FANOUT)
         except Exception:  # noqa: BLE001 - a retrieval miss must not void the turn
             return []
 
         cites: list[str] = []
+        seen_records: set[str] = set()
         for hit in hits:
-            record = self._corpus.get(getattr(hit, "record_id", ""))
+            record_id = str(getattr(hit, "record_id", "") or "")
+            if not record_id or record_id in seen_records:
+                continue
+            seen_records.add(record_id)
+            record = self._corpus.get(record_id)
             if record is None:
                 continue
             cite = self._format(record)
+            # Still deduped by cite as well as by record: the corpus holds more
+            # than one record for some authorities, and two records formatting
+            # to the same citation are one candidate to a reader.
             if cite and cite not in cites:
                 cites.append(cite)
+            if len(cites) >= self._k:
+                break
         return cites
 
 

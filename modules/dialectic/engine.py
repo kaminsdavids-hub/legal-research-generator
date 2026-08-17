@@ -41,6 +41,38 @@ class ChatClient(Protocol):
     def chat(self, messages: list[Any], config: Any | None = None) -> str: ...
 
 
+# Signals in a slot's `court_hint` about which *kind* of authority it wants, used
+# by `_select_candidate` when similarity ranking and the hint disagree.
+#
+# `_CASE_HINTS` wins whenever it matches, because a hint naming courts is
+# unambiguous while a hint naming rules is not: "government regulation of speech"
+# is a subject, "export control regulations" is an instrument, and only the
+# second should pull a C.F.R. section. Bare "regulation"/"regulations" is
+# therefore absent from `_INSTRUMENT_HINTS` on purpose — every entry there names
+# a statutory instrument outright or is domain-specific enough not to describe a
+# subject. Both lists are matched as substrings, so "statut" covers statute,
+# statutes and statutory.
+_CASE_HINTS = (
+    "precedent",
+    "court",
+    "circuit",
+    "case law",
+    "opinion",
+    "holding",
+    "decision",
+    " v. ",
+)
+_INSTRUMENT_HINTS = (
+    "statut",
+    "c.f.r",
+    "u.s.c",
+    "code of federal regulations",
+    "federal register",
+    "rulemaking",
+    "export control regulation",
+    "export administration regulation",
+)
+
 # Each side is told which way to argue. Without this the two debaters, generated
 # independently from the same question, frequently argued the SAME side — and a
 # dialectic in which both sides agree produces no cruxes by construction. Observed
@@ -586,13 +618,45 @@ class DialecticChat:
             proposed.append(
                 slot.model_copy(
                     update={
-                        "normalized_cite": candidates[0],
+                        "normalized_cite": self._select_candidate(slot, candidates),
                         "status": SlotStatus.PROPOSED,
                         "note": "candidate proposed by retrieval; awaiting verification",
                     }
                 )
             )
         return position.model_copy(update={"propositions": proposed})
+
+    @staticmethod
+    def _select_candidate(slot: CitationSlot, candidates: list[str]) -> str:
+        """Pick the candidate the slot actually asked for.
+
+        Retrieval ranks on similarity, which on this corpus means a long,
+        heavily-quoted opinion outscores the regulation a proposition is
+        explicitly about: every slot on an export-control question was assigned
+        a First Amendment case while 15 C.F.R. 734.13(b) sat unused at rank two.
+        The ``court_hint`` says which instrument was wanted, so use it.
+
+        Deliberately timid, and only overrides the top candidate when the hint
+        names a *statutory instrument* and does not name case law. A hint like
+        "First Amendment analysis of government regulation of speech" contains
+        "regulation" while plainly asking for precedent, so bare "regulation" is
+        not a signal and a case marker anywhere in the hint settles it. When the
+        signals are mixed, absent, or nothing non-case was retrieved, the
+        similarity ranking stands — an uncertain reading must not be allowed to
+        attach a regulation to a proposition that wanted a case, which is a
+        worse error than the one being fixed.
+        """
+        if not candidates:
+            return ""
+        hint = slot.court_hint.lower()
+        if any(marker in hint for marker in _CASE_HINTS):
+            return candidates[0]
+        if not any(marker in hint for marker in _INSTRUMENT_HINTS):
+            return candidates[0]
+        for cite in candidates:
+            if not is_case_citation(cite):
+                return cite
+        return candidates[0]
 
     def _confirm(self, cite: str) -> bool:
         """Whether the retriever holds *cite* as operative authority."""
